@@ -28,9 +28,9 @@
 #define MAX_REP_NUM                    (10)
 #define HASH_INIT_SUBTABLE_NUM         (1 << HASH_INIT_LOCAL_DEPTH)
 
-
-// #define ROOT_RES_LEN          (sizeof(RaceHashRoot))
 #define HASH_ADDRESSABLE_BUCKET_NUM    (34000ULL)
+#define HASH_SUBTABLE_BUCKET_NUM       (HASH_ADDRESSABLE_BUCKET_NUM * 3 / 2) //Combined buckets
+
 #define SUBTABLE_LEN          (HASH_ADDRESSABLE_BUCKET_NUM * sizeof(Bucket))
 #define SUBTABLE_RES_LEN      (HASH_MAX_SUBTABLE_NUM * SUBTABLE_LEN)
 
@@ -43,14 +43,6 @@ struct Slot
   uint8_t fp;
   uint8_t len;
   uint8_t pointer[6];
-};
-
-struct KVblock
-{
-  uint8_t k_len;
-  uint8_t v_len;
-  uint64_t key;
-  uint64_t value;
 };
 
 struct Header
@@ -74,7 +66,7 @@ struct Subtable
 
 struct KVInfo {
     void   * key_addr;
-    uint32_t key_len;
+    uint16_t key_len;
     uint32_t value_len;
 };
 
@@ -87,7 +79,7 @@ typedef struct KVHashInfo {
 
 struct KVTableAddrInfo {
     uint64_t    f_bucket_addr;
-    uint64_t    s_bucket_addr; // they are calculated by s_idx;
+    uint64_t    s_bucket_addr; // they are calculated by s_idx; represents the start address of the combined buckets.
 
     uint32_t    f_main_idx;
     uint32_t    s_main_idx;
@@ -97,17 +89,8 @@ struct KVTableAddrInfo {
 };
 
 struct KVRWAddr {
-    uint64_t kv_addr;
-    uint32_t len;
-};
-
-struct KVLogHeader {
-    uint16_t key_length;
-    uint32_t value_length;
-};
-
-struct KVLogTail {
-    uint8_t  crc;
+    uint64_t addr;
+    uint32_t len; // the number of KVblocks
 };
 
 struct HashRoot{
@@ -118,98 +101,69 @@ struct HashRoot{
     uint64_t prefix_num;
 
     uint64_t subtable_init_num;
-    // uint64_t subtable_hash_range;
+    uint64_t subtable_hash_range;
     uint64_t subtable_bucket_num;
     uint64_t seed;
 
-    // uint64_t root_offset;
-    // uint64_t subtable_offset;
     uint64_t kv_offset; 
-    uint64_t kv_len; 
+    // uint64_t kv_len; 
     
-    // uint64_t lock;
-    Subtable subtable_entry[HASH_MAX_SUBTABLE_NUM];
+    Subtable subtable_entry[HASH_MAX_SUBTABLE_NUM]; // it's like a directory of a extensible hash
 };
 
+class Myhash{
+private:
+    MemoryPool * mm_;
+    HashRoot * root_;
 
+private:
 
-
-
-
-
-
-
-
-
-void kv_put(const ExtendableHashTable& table, const std::string& key, const std::string& value)
-{
-  auto bucket_cown = table.get_bucket(key);
-  verona::cpp::when(bucket_cown) << [key, value, &table](auto bucket) {
-    // Check if the key already exists
-    for (auto& entry : bucket->entries)
-    {
-      if (entry.first == key)
-      {
-        entry.second = value;
-        return;
-      }
+    inline char * get_key(KVInfo * kv_info) {
+        return (char *)((uint64_t)kv_info->key_addr);
     }
 
-    // Insert new key-value pair
-    if (bucket->has_space())
-    {
-      bucket->entries.push_back({key, value});
+    inline char * get_value(KVInfo * kv_info) {
+        return (char *)((uint64_t)kv_info->key_addr + kv_info->key_len);
     }
-    else
-    {
-      // Bucket is full, need to split and rehash
-      table.split_bucket(table.get_directory_index(table.hash(key)));
-      kv_put(table, key, value); // Retry insertion after split
-    }
-  };
-}
 
-void kv_get(const ExtendableHashTable& table, const std::string& key, const std::function<void(std::optional<std::string>)>& callback)
-{
-  auto bucket_cown = table.get_bucket(key);
-  verona::cpp::when(bucket_cown) << [key, callback](auto bucket) {
-    for (const auto& entry : bucket->entries)
-    {
-      if (entry.first == key)
-      {
-        callback(entry.second);
-        return;
-      }
-    }
-    callback(std::nullopt); // Key not found
-  };
-}
+public:
+    Myhash(){};
+    Myhash(size_t chunk_size, size_t num_chunks);
+    ~Myhash(){}
 
-void kv_erase(const ExtendableHashTable& table, const std::string& key)
-{
-  auto bucket_cown = table.get_bucket(key);
-  verona::cpp::when(bucket_cown) << [key](auto bucket) {
-    auto it = std::remove_if(bucket->entries.begin(), bucket->entries.end(),
-                             [&key](const std::pair<std::string, std::string>& entry) {
-                               return entry.first == key;
-                             });
-    if (it != bucket->entries.end())
-    {
-      bucket->entries.erase(it, bucket->entries.end());
-      std::cout << "Removed key: " << key << std::endl;
+    KVInfo   * kv_info_list_;
+    KVReqCtx * kv_req_ctx_list_;
+    uint32_t   num_total_operations_;
+
+    void init_hash_table();
+    void init_root();
+    void init_subtable();
+
+    int kv_update(KVInfo * kv_info);
+
+    int kv_insert(KVInfo * kv_info);
+
+    void * kv_search(KVInfo * kv_info);
+
+    int kv_delete(KVInfo * kv_info);
+
+    inline MemoryPool * get_mm() {
+        return mm_;
     }
-    else
-    {
-      std::cout << "Key: " << key << " not found for removal" << std::endl;
-    }
-  };
-}
+};
 
 static inline uint64_t HashIndexConvert40To64Bits(uint8_t * addr) {
     uint64_t ret = 0;
     return ret | ((uint64_t)addr[0] << 40) | ((uint64_t)addr[1] << 32)
         | ((uint64_t)addr[2] << 24) | ((uint64_t)addr[3] << 16) 
         | ((uint64_t)addr[4] << 8);
+}
+
+static inline uint64_t HashIndexConvert48To64Bits(uint8_t * addr) {
+    uint64_t ret = 0;
+    return ret | ((uint64_t)addr[0] << 48) | ((uint64_t)addr[1] << 40)
+        | ((uint64_t)addr[2] << 32) | ((uint64_t)addr[3] << 24) 
+        | ((uint64_t)addr[4] << 16) | ((uint64_t)addr[5] << 8);
 }
 
 static inline void HashIndexConvert64To40Bits(uint64_t addr, uint8_t * o_addr) {
@@ -220,8 +174,16 @@ static inline void HashIndexConvert64To40Bits(uint64_t addr, uint8_t * o_addr) {
     o_addr[4] = (uint8_t)((addr >> 8)  & 0xFF);
 }
 
-static uint64_t string_key_hash_computation(const void * data, uint64_t length, 
-        uint64_t seed, uint32_t align) {
+static inline void HashIndexConvert64To48Bits(uint64_t addr, uint8_t * o_addr) {
+    o_addr[0] = (uint8_t)((addr >> 48) & 0xFF);
+    o_addr[1] = (uint8_t)((addr >> 40) & 0xFF);
+    o_addr[2] = (uint8_t)((addr >> 32) & 0xFF);
+    o_addr[3] = (uint8_t)((addr >> 24) & 0xFF);
+    o_addr[4] = (uint8_t)((addr >> 16) & 0xFF);
+    o_addr[5] = (uint8_t)((addr >> 8)  & 0xFF);
+}
+
+static uint64_t string_key_hash_computation(const void * data, uint64_t length, uint64_t seed, uint32_t align) {
     const uint8_t * p = (const uint8_t *)data;
     const uint8_t * end = p + length;
     uint64_t hash;
@@ -328,7 +290,7 @@ static inline uint64_t SubtableSecondIndex(uint64_t hash_value, uint64_t f_index
 
 static inline void ConvertSlotToAddr(Slot * slot, KVRWAddr * kv_addr) {
 
-    kv_addr->kv_addr = HashIndexConvert40To64Bits(slot->pointer);
+    kv_addr->addr = HashIndexConvert48To64Bits(slot->pointer);
 }
 
 bool IsEmptyPointer(uint8_t * pointer, uint32_t num) {
@@ -369,5 +331,3 @@ uint8_t HashIndexComputeFp(uint64_t hash) {
     fp ^= hash;
     return fp;
 }
-
-bool CheckKey(void * r_key_addr, uint32_t r_key_len, void * l_key_addr, uint32_t l_key_len) {

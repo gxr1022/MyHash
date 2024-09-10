@@ -4,45 +4,54 @@
 #include <cmath>
 #include <cstdint>
 #include "Myhash.h"
-#include "client.h"
 #include "mm.h"
 
-Client::Client() {
-    // create mm
-    mm_ = new MemoryPool(64 , 1024);
-    init_hashtable();
-
-
+Myhash::Myhash(size_t chunk_size, size_t num_chunks) {
+    mm_ = new MemoryPool(chunk_size , chunk_size);
+    init_hash_table();
 }
 
-void Client::init_root()
+void Myhash::init_hash_table() {
+    init_root();
+    init_subtable();
+    return;
+}
+
+void Myhash::init_root()
 {
-    // initialize the root of hashtable
+    // initialize the root_ of hashtable
     root_ = (HashRoot *)malloc(sizeof(HashRoot));
     if(root_==NULL)
     {
         // to do
         return;
     }
-    root->global_depth = HASH_GLOBAL_DEPTH;
-    root->init_local_depth = HASH_INIT_LOCAL_DEPTH;
-    root->max_global_depth = HASH_MAX_GLOBAL_DEPTH;
-    root->prefix_num = 1 << HASH_MAX_GLOBAL_DEPTH;
-    root->subtable_init_num = HASH_INIT_SUBTABLE_NUM;
-    root->subtable_hash_range = HASH_ADDRESSABLE_BUCKET_NUM;
-    root->subtable_bucket_num = HASH_SUBTABLE_BUCKET_NUM;
-    root->seed = rand();
+    root_->global_depth = HASH_GLOBAL_DEPTH;
+    root_->max_global_depth = HASH_MAX_GLOBAL_DEPTH;
+    root_->init_local_depth = HASH_INIT_LOCAL_DEPTH;
+
+    root_->prefix_num = 1 << HASH_MAX_GLOBAL_DEPTH;
+
+    root_->subtable_init_num = HASH_INIT_SUBTABLE_NUM;
+    root_->subtable_hash_range = HASH_ADDRESSABLE_BUCKET_NUM;
+    root_->subtable_bucket_num = HASH_SUBTABLE_BUCKET_NUM;
+    root_->seed = rand();
+
+    root_->kv_offset = mm_->init_KVblock_meta_info_->addr; 
+
     return;
 }
 
-void Client::init_subtable()
+void Myhash::init_subtable()
 {
     for (int i = 0; i < HASH_INIT_SUBTABLE_NUM; i ++) {
         for (int j = 0; j < HASH_SUBTABLE_NUM / HASH_INIT_SUBTABLE_NUM; j ++) {
             uint64_t subtable_idx = j * HASH_INIT_SUBTABLE_NUM + i;
             MMAllocSubtableCtx *subtable_info = (MMAllocSubtableCtx *)malloc(sizeof(MMAllocSubtableCtx));
             subtable_info->subtable_idx = subtable_idx;
+
             mm_->mm_alloc_subtable(subtable_info);
+
             root_->subtable_entry[subtable_idx].local_depth = HASH_INIT_LOCAL_DEPTH;
             HashIndexConvert64To48Bits(subtable_info->addr, root_->subtable_entry[subtable_idx].pointer);
         }   
@@ -50,13 +59,7 @@ void Client::init_subtable()
     return;
 }
 
-int Client::init_hash_table() {
-    init_root();
-    init_subtable();
-    return 0;
-}
-
-void Client::kv_search(KVInfo * kv_info)
+void * Myhash::kv_search(KVInfo * kv_info)
 {
     KVReqCtx ctx;
     memset(&ctx, 0, sizeof(KVReqCtx));
@@ -73,7 +76,7 @@ void Client::kv_search(KVInfo * kv_info)
 
 }
 
-void Client::find_kv_in_buckets(KVReqCtx * ctx) {
+void Myhash::find_kv_in_buckets(KVReqCtx * ctx) {
     get_com_bucket_info(ctx);
 
     // search all kv pair that finger print matches, myhash use two hash function to solve hash collision, use one overﬂow bucket to store overflow kv pairs.
@@ -90,7 +93,7 @@ void Client::find_kv_in_buckets(KVReqCtx * ctx) {
     }
 }
 
-void Client::kv_update(KVInfo * kv_info)
+void Myhash::kv_update(KVInfo * kv_info)
 {
     KVReqCtx ctx;
     memset(&ctx, 0, sizeof(KVReqCtx));
@@ -121,7 +124,7 @@ void Client::kv_update(KVInfo * kv_info)
     return;
 }
 
-void Client::find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot)
+void Myhash::find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot)
 {
     get_com_bucket_info(ctx);
 
@@ -136,7 +139,7 @@ void Client::find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot)
     }
 }
 
-void Client::kv_insert(KVInfo * kv_info)
+void Myhash::kv_insert(KVInfo * kv_info)
 {
     KVReqCtx ctx;
     memset(&ctx, 0, sizeof(KVReqCtx));
@@ -152,7 +155,7 @@ void Client::kv_insert(KVInfo * kv_info)
     return;
 }
 
-void Client::kv_insert_read_buckets_and_write_kv(KVReqCtx * ctx) {
+void Myhash::kv_insert_read_buckets_and_write_kv(KVReqCtx * ctx) {
 
     // Allocate KV block memory, sizeof(k_len+v_len)=6, sizeof(crc)=1
     uint32_t kv_block_size = 6 + ctx->kv_info.key_len + ctx->kv_info.value_len + 1;
@@ -186,7 +189,7 @@ void Client::kv_insert_read_buckets_and_write_kv(KVReqCtx * ctx) {
     return;
 }
 
-void Client::kv_delete(KVInfo * kv_info)
+void Myhash::kv_delete(KVInfo * kv_info)
 {
     KVReqCtx ctx;
     memset(&ctx, 0, sizeof(KVReqCtx));
@@ -208,13 +211,13 @@ void Client::kv_delete(KVInfo * kv_info)
 
 }
 
-void Client::fill_slot(MMAllocCtx * mm_alloc_ctx, KVHashInfo * a_kv_hash_info, Slot * local_slot) {
+void Myhash::fill_slot(MMAllocCtx * mm_alloc_ctx, KVHashInfo * a_kv_hash_info, Slot * local_slot) {
     local_slot->fp = a_kv_hash_info->fp;
     local_slot->kv_len = mm_alloc_ctx->num_subblocks; // every subblock has 64 bytes, and kv_len represents the total length of KV block.
     HashIndexConvert64To48Bits(mm_alloc_ctx->addr, local_slot->pointer);
 }
 
-void Client::find_empty_slot(KVReqCtx * ctx) 
+void Myhash::find_empty_slot(KVReqCtx * ctx) 
 {
     get_local_bucket_info(ctx); // why here? 
 
@@ -250,10 +253,10 @@ void Client::find_empty_slot(KVReqCtx * ctx)
 
 }
 
-//class KVInfo represents KV information offseted by client/test. 
+//class KVInfo represents KV information offseted by Myhash/test. 
 //class KVHashInfo represents some fields which are stored in hash table.
 //The function get local_depth, fp, hash_value and subtable address of a specified key.
-void Client::get_kv_hash_info(KVInfo * a_kv_info, KVHashInfo * a_kv_hash_info) 
+void Myhash::get_kv_hash_info(KVInfo * a_kv_info, KVHashInfo * a_kv_hash_info) 
 {
     uint64_t key_addr = (uint64_t)a_kv_info->key_addr;
     a_kv_hash_info->hash_value = VariableLengthHash((void *)key_addr, a_kv_info->key_len, 0);
@@ -265,7 +268,7 @@ void Client::get_kv_hash_info(KVInfo * a_kv_info, KVHashInfo * a_kv_hash_info)
 
 // class KVTableAddrInfo represents detailed bucket address of KV pair in hashtable.
 // The function gets bucket address of a specified key.
-void Client::get_kv_addr_info(KVHashInfo * a_kv_hash_info, KVTableAddrInfo * a_kv_addr_info) {
+void Myhash::get_kv_addr_info(KVHashInfo * a_kv_hash_info, KVTableAddrInfo * a_kv_addr_info) {
     uint64_t hash_value = a_kv_hash_info->hash_value;
     uint64_t prefix     = a_kv_hash_info->prefix;
 
@@ -299,7 +302,7 @@ void Client::get_kv_addr_info(KVHashInfo * a_kv_hash_info, KVTableAddrInfo * a_k
     
 }
 
-void Client::get_com_bucket_info(KVReqCtx * ctx) {
+void Myhash::get_com_bucket_info(KVReqCtx * ctx) {
     //The first combination buckets and the second combination buckets
     //Assumping that local_bucket_addr is the start address of one combination bucket. 
     //The second combination is the next to the first combination.
