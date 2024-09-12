@@ -80,7 +80,7 @@ void MemoryPool::mm_free(Slot* slot) {
 
     char tmp[256] = {0};
     std::string addr_str(tmp);
-    free_faa_map_[addr_str] += add_value;
+    // free_faa_map_[addr_str] += add_value;   how to manage bitmap?
 }
 
 void MemoryPool::mm_free_cur(const MMAllocCtx * ctx) {

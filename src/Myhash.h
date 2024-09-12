@@ -6,7 +6,7 @@
 #include <iostream>
 #include <cstdint>
 #include <atomic>
-
+#include <thread>
 
 #define NUMBER64_1 11400714785074694791ULL
 #define NUMBER64_2 14029467366897019727ULL
@@ -41,10 +41,15 @@
 #define HASH_MASK(n)                   ((1 << n) - 1)
 
 
-#include <atomic>
-#include <iostream>
-#include <thread>
 
+
+typedef struct U64_INT {
+    uint64_t v;
+} U64_INT;
+
+typedef struct U32_INT {
+    uint32_t v;
+} U32_INT;
 
 struct Slot
 {
@@ -346,6 +351,20 @@ static inline uint64_t SubtableSecondIndex(uint64_t hash_value, uint64_t f_index
 static inline void ConvertSlotToAddr(Slot * slot, KVRWAddr * kv_addr) {
 
     kv_addr->addr = HashIndexConvert48To64Bits(slot->pointer);
+}
+
+static uint64_t hash_read64_align(const void * ptr, uint32_t align) {
+    if (align == 0) {
+        return TO64(ptr);
+    }
+    return *(uint64_t *)ptr;
+}
+
+static uint32_t hash_read32_align(const void * ptr, uint32_t align) {
+    if (align == 0) {
+        return TO32(ptr);
+    }
+    return *(uint32_t *)ptr;
 }
 
 bool IsEmptyPointer(uint8_t * pointer, uint32_t num) {
