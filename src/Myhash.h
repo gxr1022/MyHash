@@ -3,7 +3,9 @@
 #include <string>
 #include <optional>
 #include <cmath>
+#include <iostream>
 #include <cstdint>
+#include <atomic>
 
 
 #define NUMBER64_1 11400714785074694791ULL
@@ -38,6 +40,12 @@
 
 #define HASH_MASK(n)                   ((1 << n) - 1)
 
+
+#include <atomic>
+#include <iostream>
+#include <thread>
+
+
 struct Slot
 {
   uint8_t fp;
@@ -66,8 +74,10 @@ struct Subtable
 
 struct KVInfo {
     void   * key_addr;
+    void   * value_addr;
     uint16_t key_len;
     uint32_t value_len;
+    uint8_t ops_type;
 };
 
 typedef struct KVHashInfo {
@@ -107,8 +117,44 @@ struct HashRoot{
 
     uint64_t kv_offset; 
     // uint64_t kv_len; 
-    
     Subtable subtable_entry[HASH_MAX_SUBTABLE_NUM]; // it's like a directory of a extensible hash
+};
+
+enum KVRequestType {
+    KV_REQ_SEARCH,
+    KV_REQ_INSERT,
+    KV_REQ_UPDATE,
+    KV_REQ_DELETE,
+};
+
+enum KVOpsRetCode {
+    KV_OPS_SUCCESS = 0,
+    KV_OPS_FAIL_RETURN,
+};
+
+struct KVReqCtx {
+    // bucket_info
+    Bucket * f_com_bucket; 
+    Bucket * s_com_bucket;
+    Slot   * slot_arr[4]; 
+    uint64_t checksum;
+
+    KVInfo * kv_info;
+
+    KVHashInfo      hash_info;
+    KVTableAddrInfo tbl_addr_info;
+
+    // for kv block allocation
+    MMAllocCtx mm_alloc_ctx;
+
+    // for insert
+    int32_t bucket_idx;
+    int32_t slot_idx;
+
+    union {
+        void * value_addr;    // for search return value
+        int    ret_code;
+    } ret_val;
 };
 
 class Myhash{
@@ -116,7 +162,14 @@ private:
     MemoryPool * mm_;
     HashRoot * root_;
 
-private:
+    void get_comb_bucket_info(KVReqCtx * ctx);
+    void get_kv_addr_info(KVHashInfo * a_kv_hash_info, KVTableAddrInfo * a_kv_addr_info);
+    void get_kv_hash_info(KVInfo * a_kv_info, KVHashInfo * a_kv_hash_info);
+    int fill_slot(MMAllocCtx * mm_alloc_ctx, KVHashInfo * a_kv_hash_info, Slot* target_slot);
+    void find_empty_slot(KVReqCtx * ctx);
+    void find_kv_in_buckets(KVReqCtx * ctx);
+    void find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot);
+    int atomic_write_to_slot(Slot* target_slot, uint64_t atomic_slot_val);
 
     inline char * get_key(KVInfo * kv_info) {
         return (char *)((uint64_t)kv_info->key_addr);
@@ -140,11 +193,9 @@ public:
     void init_subtable();
 
     int kv_update(KVInfo * kv_info);
-
     int kv_insert(KVInfo * kv_info);
-
+    void kv_insert_read_buckets_and_write_kv(KVReqCtx * ctx);
     void * kv_search(KVInfo * kv_info);
-
     int kv_delete(KVInfo * kv_info);
 
     inline MemoryPool * get_mm() {
@@ -182,6 +233,10 @@ static inline void HashIndexConvert64To48Bits(uint64_t addr, uint8_t * o_addr) {
     o_addr[4] = (uint8_t)((addr >> 16) & 0xFF);
     o_addr[5] = (uint8_t)((addr >> 8)  & 0xFF);
 }
+
+// uint64_t HashIndexConvert64To48Bits(uint64_t full_addr) {
+//     return full_addr & 0xFFFFFFFFFFFF;
+// }
 
 static uint64_t string_key_hash_computation(const void * data, uint64_t length, uint64_t seed, uint32_t align) {
     const uint8_t * p = (const uint8_t *)data;
@@ -330,4 +385,46 @@ uint8_t HashIndexComputeFp(uint64_t hash) {
     hash >>= 8;
     fp ^= hash;
     return fp;
+}
+
+uint64_t ConvertSlotTo64Bits(const Slot& slot) {
+    uint64_t packed = 0;
+    packed |= static_cast<uint64_t>(slot.fp) << 56;
+    packed |= static_cast<uint64_t>(slot.len) << 48;
+
+    uint64_t pointer_value = 0;
+    memcpy(&pointer_value, slot.pointer, 6);
+    packed |= pointer_value & 0xFFFFFFFFFFFF;  
+
+    return packed;
+}
+
+uint64_t CRC64(const void* data, size_t length) {
+    uint64_t crc = 0;
+    const uint8_t* byte_data = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < length; ++i) {
+        crc ^= static_cast<uint64_t>(byte_data[i]);
+        for (int j = 0; j < 8; ++j) {
+            if (crc & 1) {
+                crc = (crc >> 1) ^ 0xC96C5795D7870F42ULL; // 这是一个典型的CRC64多项式
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+    return crc;
+}
+
+
+uint64_t SetChecksum(const void* key_data, size_t key_len, const void* value_data, size_t value_len) {
+    uint64_t checksum;
+    checksum = CRC64(key_data,key_len);
+    checksum ^= CRC64(value_data,value_len);  // 将 key 和 value 的校验和合并
+}
+
+
+bool VerifyChecksum(const void* key_data, size_t key_len, const void* value_data, size_t value_len, uint64_t checksum) {
+    uint64_t computed_checksum = CRC64(key_data, key_len);
+    computed_checksum ^= CRC64(value_data, value_len);
+    return computed_checksum == checksum;
 }

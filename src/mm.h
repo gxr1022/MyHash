@@ -25,7 +25,7 @@ struct MMAllocCtx {
     uint64_t addr;
     uint64_t prev_addr;
     uint64_t next_addr;
-    uint32_t num_subblocks;
+    uint8_t num_subblocks;
     bool     need_change_prev;
 };
 
@@ -39,7 +39,7 @@ struct MetaAddrInfo {
 };
 
 class MemoryPool {
-private:
+public:
     size_t chunk_size_;  
     size_t num_chunks_; 
     uint64_t mm_block_size_; 
@@ -69,7 +69,7 @@ public:
     ~MemoryPool() {
         for(int i=0;i<meta_info_.size();i++)
         {
-            free(void*(meta_info_[i]->addr));
+            free((void*)(meta_info_[i]->addr));
         }
     }
 
