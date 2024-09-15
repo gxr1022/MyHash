@@ -67,7 +67,7 @@ void * Myhash::kv_search(KVInfo * kv_info)
     memset(&ctx, 0, sizeof(KVReqCtx));
     ctx.kv_info = kv_info;
 
-    get_kv_hash_info(ctx.kv_info, &ctx.hash_info); // initialize ctx.hash_info
+    get_kv_hash_info((uint64_t*)ctx.kv_info->key_addr,ctx.kv_info->key_len, &ctx.hash_info);
     get_kv_addr_info(&ctx.hash_info, &ctx.tbl_addr_info); // initialize ctx.hash_info
     find_kv_in_buckets(&ctx);
     if(ctx.ret_val.value_addr!=NULL && VerifyChecksum(ctx.kv_info->key_addr,ctx.kv_info->key_len,ctx.ret_val.value_addr,ctx.kv_info->value_len,ctx.checksum)){
@@ -127,7 +127,7 @@ int Myhash::kv_update(KVInfo * kv_info)
 
     //If it needs memory barrier?
 
-    get_kv_hash_info(ctx.kv_info, &ctx.hash_info);
+    get_kv_hash_info((uint64_t*)ctx.kv_info->key_addr,ctx.kv_info->key_len, &ctx.hash_info);
     get_kv_addr_info(&ctx.hash_info, &ctx.tbl_addr_info);
 
     Slot* target_slot;
@@ -172,7 +172,7 @@ int Myhash::kv_insert(KVInfo * kv_info)
 
     ctx.kv_info = kv_info;
 
-    get_kv_hash_info(ctx.kv_info, &ctx.hash_info); // get hash_value through key
+    get_kv_hash_info((uint64_t*)ctx.kv_info->key_addr,ctx.kv_info->key_len, &ctx.hash_info);
     get_kv_addr_info(&ctx.hash_info, &ctx.tbl_addr_info);
 
     //After get the bucket address of KV pair, we need to find an empty slot to store the KV pair.
@@ -287,30 +287,50 @@ void Myhash::kv_resize(KVReqCtx * ctx){
 
     cur_prefix = ctx -> hash_info.prefix;
     cur_local_depth = ctx -> hash_info.local_depth;
-    new_prefix = cur_prefix + (1 << cur_local_depth);
-    new_local_depth +=  1;
+    new_prefix = (ctx -> hash_info.hash_value >> SUBTABLE_USED_HASH_BIT_NUM) & HASH_MASK(root_->global_depth);
+    new_local_depth = cur_local_depth + 1;
     
+    // modify local_depth of subtables during resize operation.
     root_->subtable_entry[new_prefix].local_depth = cur_local_depth + 1;
+    root_->subtable_entry[cur_prefix].local_depth = cur_local_depth + 1;
 
     
     // modify buckets for new subtable
     // 1. get the init address of new_subtable
     uint64_t new_subtable_addr = HashIndexConvert48To64Bits(root_->subtable_entry[new_prefix].pointer);
-
-    // 2. modify the buckets in new subtable.
+    uint64_t cur_subtable_addr = HashIndexConvert48To64Bits(root_->subtable_entry[cur_prefix].pointer);
+    
+    // 2. iterate cur subtable, recalculate the hash value of each key. 
+    uint64_t iter_kv_subblock_addr,iter_key_addr,iter_key_len;
     for (int i = 0; i < HASH_ADDRESSABLE_BUCKET_NUM; i ++) {
-        Bucket * bucket = (Bucket *)new_subtable_addr + j;
-        memset(bucket, 0, sizeof(Bucket));
-
+        Bucket * bucket_in_cur_subtbl = (Bucket *)cur_subtable_addr + i;
         for (int j = 0; j < HASH_ASSOC_NUM; j ++)
         { 
-            I need to every key_value.
+            Slot* target_slot = &bucket_in_cur_subtbl->slots[j];
+            iter_kv_subblock_addr = HashIndexConvert48To64Bits(target_slot -> pointer);
+            iter_key_addr = iter_kv_subblock_addr + 6 ;
+            iter_key_len = ctx->kv_info->key_len;
+            // if prefix == new_prefix, move it to new subtable. modify the prefix of buckets in current subtable.
+            uint64_t iter_hash_value = VariableLengthHash((void *)iter_key_addr, iter_key_len, 0);
+            uint64_t iter_key_prefix = (iter_hash_value >> SUBTABLE_USED_HASH_BIT_NUM) & HASH_MASK(root_->global_depth);
+            if (iter_key_prefix == new_prefix){ // key-value pairs needed to be move to new subtables
+
+            }
+            else{
+                KVHashInfo kv_hash_info;
+                KVTableAddrInfo tbl_addr_info;
+                kv_hash_info.hash_value = iter_hash_value;
+                get_kv_hash_info(&iter_key_addr,iter_key_len,&kv_hash_info); // prefix, fp, hash_value,local_depth;
+                get_kv_addr_info(&kv_hash_info, &tbl_addr_info);
+
+                //After get the bucket address of KV pair, we need to find an empty slot to store the KV pair.
+                kv_insert_read_buckets_and_write_kv(&ctx); // BUG, there is no info about key and value .
+
+            }
+
         }
         
 
-
-        bucket->h.local_depth = new_local_depth; //the local_depth of all buckets in cur subtable increase by 1;
-        bucket->h.prefix = (a_kv_hash_info->hash_value >> SUBTABLE_USED_HASH_BIT_NUM) & HASH_MASK(root_->global_depth); //是否需要bucket的第一个slot的hash
     }
 
     // 3. move kv-pairs from cur subtable to new subtable.
@@ -322,10 +342,42 @@ void Myhash::kv_resize(KVReqCtx * ctx){
         bucket->h.prefix = ctx->subtable_idx;
     }
 
+}
 
+void Myhash::kv_resize_update_slot(uint64_t iter_kv_subblock_addr, ) {
 
+    // Allocate KV block memory, sizeof(k_len+v_len)=6, sizeof(crc)=1
+    uint32_t kv_block_size = 6 + (ctx->kv_info)->key_len + (ctx->kv_info)->value_len;
+    mm_->mm_alloc_subblock(kv_block_size, &ctx->mm_alloc_ctx); 
 
+    //acquire the address of KVblock and write key-value pair
+    void* KVblock_addr = (void*)ctx->mm_alloc_ctx.addr;
+    uint64_t checksum = SetChecksum(&(ctx->kv_info)->key_addr,(ctx->kv_info)->key_len,&(ctx->kv_info)->value_addr,(ctx->kv_info)->value_len);
+    memcpy(KVblock_addr, &(ctx->kv_info)->key_len, 2);
+    memcpy(KVblock_addr + 2, &(ctx->kv_info)->value_len, 4);
+    memcpy(KVblock_addr + 6, &(ctx->kv_info)->key_addr, (ctx->kv_info)->key_len);
+    memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len, &(ctx->kv_info)->value_addr,(ctx->kv_info)->value_len);
+    memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len + (ctx->kv_info)->value_len,&checksum,8);
 
+    //find an empty slot ……
+    find_empty_slot(ctx);
+    
+    // Determine the target slot and fill it.
+    Slot* target_slot;
+    if (ctx->bucket_idx < 2) {
+         target_slot = &ctx->f_com_bucket[ctx->bucket_idx].slots[ctx->slot_idx];
+    } else {
+        target_slot = &ctx->s_com_bucket[ctx->bucket_idx - 2].slots[ctx->slot_idx];
+    }
+
+    int ret = fill_slot(&ctx->mm_alloc_ctx, &ctx->hash_info, target_slot);
+    if(ret==0){
+        ctx->ret_val.ret_code = KV_OPS_SUCCESS;
+    }
+    else{
+        ctx->ret_val.ret_code = KV_OPS_FAIL_RETURN;
+    }
+    return;
 }
 
 int Myhash::kv_delete(KVInfo * kv_info)
@@ -335,7 +387,7 @@ int Myhash::kv_delete(KVInfo * kv_info)
 
     ctx.kv_info = kv_info;
 
-    get_kv_hash_info(ctx.kv_info, &ctx.hash_info);
+    get_kv_hash_info((uint64_t*)ctx.kv_info->key_addr,ctx.kv_info->key_len, &ctx.hash_info);
     get_kv_addr_info(&ctx.hash_info, &ctx.tbl_addr_info);
 
     Slot* target_slot;
@@ -430,10 +482,9 @@ void Myhash::find_empty_slot(KVReqCtx * ctx)
 //class KVInfo represents KV information offseted by Myhash/test. 
 //class KVHashInfo represents some fields which are stored in hash table.
 //The function get local_depth, fp, hash_value and subtable address of a specified key.
-void Myhash::get_kv_hash_info(KVInfo * a_kv_info, KVHashInfo * a_kv_hash_info) 
+void Myhash::get_kv_hash_info( uint64_t* key_addr, uint64_t key_len, KVHashInfo * a_kv_hash_info) 
 {
-    uint64_t key_addr = (uint64_t)a_kv_info->key_addr;
-    a_kv_hash_info->hash_value = VariableLengthHash((void *)key_addr, a_kv_info->key_len, 0);
+    a_kv_hash_info->hash_value = VariableLengthHash((void *)key_addr, key_len, 0);
     // prefix is used to find the target subtable.
     a_kv_hash_info->prefix = (a_kv_hash_info->hash_value >> SUBTABLE_USED_HASH_BIT_NUM) & HASH_MASK(root_->global_depth);
     a_kv_hash_info->local_depth = root_->subtable_entry[a_kv_hash_info->prefix].local_depth;

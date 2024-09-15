@@ -170,7 +170,7 @@ private:
 
     void get_comb_bucket_info(KVReqCtx * ctx);
     void get_kv_addr_info(KVHashInfo * a_kv_hash_info, KVTableAddrInfo * a_kv_addr_info);
-    void get_kv_hash_info(KVInfo * a_kv_info, KVHashInfo * a_kv_hash_info);
+    void get_kv_hash_info( uint64_t* key_addr, uint64_t key_len, KVHashInfo * a_kv_hash_info);
     int fill_slot(MMAllocCtx * mm_alloc_ctx, KVHashInfo * a_kv_hash_info, Slot* target_slot);
     void find_empty_slot(KVReqCtx * ctx);
     void find_kv_in_buckets(KVReqCtx * ctx);
