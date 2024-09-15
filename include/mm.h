@@ -9,6 +9,9 @@
 #include <deque>
 #include <assert.h>
 #include <string.h>
+
+#include <unordered_map>
+
 #include "Myhash.h"
 
 enum AllocType {
@@ -46,8 +49,10 @@ public:
     uint32_t cur_mm_block_idx_;
     uint32_t bmap_block_num_;
     
-    std::deque<Chunk> subblock_free_queue_;
-    Chunk last_allocated_info_;
+    std::deque<Chunk> subblock_free_queue_; // Shared resources.
+    Chunk last_allocated_info_; // Shared resources. Need synchronization.
+
+    std::unordered_map<std::string, uint64_t> free_kv_subblock_map_;
 
 public:
     std::vector<MetaAddrInfo*> meta_info_; 
@@ -61,7 +66,7 @@ public:
     // void initial_alloc_subtable();
 
     void mm_alloc_subblock(size_t size, MMAllocCtx * ctx);
-    void mm_free(Slot* target_slot);
+    void mm_free_subblock(Slot* target_slot);
     void mm_free_cur(const MMAllocCtx * ctx);
 
     void mm_alloc_subtable(MMAllocSubtableCtx * ctx);

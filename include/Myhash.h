@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <atomic>
 #include <thread>
+#include <mutex>
 
 #define NUMBER64_1 11400714785074694791ULL
 #define NUMBER64_2 14029467366897019727ULL
@@ -72,7 +73,7 @@ struct Bucket
 
 struct Subtable
 {  
-  // uint8_t lock; //?
+  uint8_t lock; 
   uint8_t local_depth;
   uint8_t pointer[6];
 };
@@ -87,8 +88,8 @@ struct KVInfo {
 
 typedef struct KVHashInfo {
     uint64_t hash_value;
-    uint64_t prefix;
-    uint8_t  fp;
+    uint64_t prefix; // index the subtable
+    uint8_t  fp; 
     uint8_t  local_depth;
 };
 
@@ -165,7 +166,7 @@ struct KVReqCtx {
 class Myhash{
 private:
     MemoryPool * mm_;
-    HashRoot * root_;
+    HashRoot * root_; // get the directory address and  KV block address.
 
     void get_comb_bucket_info(KVReqCtx * ctx);
     void get_kv_addr_info(KVHashInfo * a_kv_hash_info, KVTableAddrInfo * a_kv_addr_info);
@@ -173,6 +174,7 @@ private:
     int fill_slot(MMAllocCtx * mm_alloc_ctx, KVHashInfo * a_kv_hash_info, Slot* target_slot);
     void find_empty_slot(KVReqCtx * ctx);
     void find_kv_in_buckets(KVReqCtx * ctx);
+    void check_kv_in_candidate_buckets(KVReqCtx * ctx);
     void find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot);
     int atomic_write_to_slot(Slot* target_slot, uint64_t atomic_slot_val);
 
@@ -192,16 +194,20 @@ public:
     KVInfo   * kv_info_list_;
     KVReqCtx * kv_req_ctx_list_;
     uint32_t   num_total_operations_;
+    std::mutex subtable_entry_mutex;
 
     void init_hash_table();
     void init_root();
     void init_subtable();
+
+    void free_batch();
 
     int kv_update(KVInfo * kv_info);
     int kv_insert(KVInfo * kv_info);
     void kv_insert_read_buckets_and_write_kv(KVReqCtx * ctx);
     void * kv_search(KVInfo * kv_info);
     int kv_delete(KVInfo * kv_info);
+    void kv_resize(KVReqCtx * ctx);
 
     inline MemoryPool * get_mm() {
         return mm_;
@@ -446,4 +452,32 @@ bool VerifyChecksum(const void* key_data, size_t key_len, const void* value_data
     uint64_t computed_checksum = CRC64(key_data, key_len);
     computed_checksum ^= CRC64(value_data, value_len);
     return computed_checksum == checksum;
+}
+
+void set_bit_atomic(uint64_t* bmap_addr, uint64_t add_value) {
+    uint64_t old_val, new_val;
+
+    do {
+        old_val = *bmap_addr; // Load the current value at bmap_addr
+        new_val = old_val | add_value; // Set the bit corresponding to add_value
+
+        // Atomically compare and swap
+        // If *bmap_addr == old_val, then set it to new_val
+        // Otherwise, retry with the updated *bmap_addr
+    } while (!std::atomic_compare_exchange_weak(
+        reinterpret_cast<std::atomic<uint64_t>*>(bmap_addr), &old_val, new_val));
+}
+
+void reset_bit_atomic(uint64_t* bmap_addr, uint64_t add_value) {
+    uint64_t old_val, new_val;
+    uint64_t reset_mask = ~add_value;
+    do {
+        old_val = *bmap_addr; // Load the current value at bmap_addr
+        new_val = old_val & add_value; // Set the bit corresponding to add_value
+
+        // Atomically compare and swap
+        // If *bmap_addr == old_val, then set it to new_val
+        // Otherwise, retry with the updated *bmap_addr
+    } while (!std::atomic_compare_exchange_weak(
+        reinterpret_cast<std::atomic<uint64_t>*>(bmap_addr), &old_val, new_val));
 }

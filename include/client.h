@@ -138,7 +138,7 @@ void Client::client_ops_cnt(uint32_t ops_num) {
         kv_info->key_addr = &key;
         kv_info->key_len = key_size_;
         kv_info->value_len = value_size_;
-        kv_info->ops_type = KV_REQ_INSERT;
+        kv_info->ops_type = KV_REQ_INSERT; // just try insert now.
 
         switch (kv_info->ops_type) {
         case KV_REQ_SEARCH:

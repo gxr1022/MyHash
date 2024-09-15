@@ -1,0 +1,52 @@
+Block** Block::Split(void) {
+  using namespace std;
+  int64_t lock = 0;
+  if (!CAS(&sema, &lock, -1)) return nullptr;
+  // cout << this << " " << this_thread::get_id() << endl;
+
+#ifdef INPLACE
+  Block** split = new Block*[2];
+  split[0] = this;
+  split[1] = new Block(local_depth+1);
+
+  for (unsigned i = 0; i < kNumSlot; ++i) {
+    auto key_hash = h(&_[i].key, sizeof(Key_t));
+#ifdef LSB
+    if (key_hash & ((size_t) 1 << local_depth)) {
+#else
+    if (key_hash & ((size_t) 1 << ((sizeof(Key_t)*8 - local_depth - 1)))) {
+#endif
+      split[1]->Insert4split(_[i].key, _[i].value);
+    }
+  }
+
+  clflush((char*)split[1], sizeof(Block));
+  local_depth = local_depth + 1;
+  clflush((char*)&local_depth, sizeof(size_t));
+
+  return split;
+#else
+  Block** split = new Block*[2];
+  split[0] = new Block(local_depth+1);
+  split[1] = new Block(local_depth+1);
+
+  for (unsigned i = 0; i < kNumSlot; ++i) {
+    auto key_hash = h(&_[i].key, sizeof(Key_t));
+#ifdef LSB
+    if (key_hash & ((size_t) 1 << (local_depth))) {
+#else
+    if (key_hash & ((size_t) 1 << ((sizeof(Key_t)*8 - local_depth - 1)))) {
+#endif
+      split[1]->Insert4split(_[i].key, _[i].value);
+    } else {
+      split[0]->Insert4split(_[i].key, _[i].value);
+    }
+  }
+
+  clflush((char*)split[0], sizeof(Block));
+  clflush((char*)split[1], sizeof(Block));
+  // cout << split[0]->numElem() << " " << split[1]->numElem() << endl;
+
+  return split;
+#endif
+}

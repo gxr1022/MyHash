@@ -40,9 +40,10 @@ void MemoryPool::mm_alloc_subblock(size_t size, MMAllocCtx * ctx) {
 
     int ret = 0;
     size_t aligned_size = get_aligned_size(size);
-    int num_subblocks_required = aligned_size / chunk_size_;
+    int num_subblocks_required = aligned_size / chunk_size_;  // chunk_size_ = 64
     assert(num_subblocks_required == 1); // only allocate one subblock
 
+    //How to ensure the memory allocation is thread safe? to do ……
     assert(subblock_free_queue_.size() > 0);
     Chunk alloc_subblock = subblock_free_queue_.front();
     subblock_free_queue_.pop_front();
@@ -62,25 +63,29 @@ void MemoryPool::mm_alloc_subblock(size_t size, MMAllocCtx * ctx) {
     last_allocated_info_ = alloc_subblock;
 }
 
-// release a KV pair 
-void MemoryPool::mm_free(Slot* slot) {
+// release a KV pair, how to ensure memory free is thread-safe ? 
+void MemoryPool::mm_free_subblock(Slot* slot) {
     // Slot slot = *(Slot *)&orig_slot_val;
     uint64_t kv_raddr = HashIndexConvert48To64Bits(slot->pointer); // get key-value pair address
-    uint32_t subblock_id = (kv_raddr % (chunk_size_ * num_chunks_)) / chunk_size_;
+    Chunk last_allocated;
+    memset(&last_allocated, 0, sizeof(Chunk));
+    last_allocated.addr = kv_raddr;
+    subblock_free_queue_.push_front(last_allocated);
     
     // update bitmap, set subblock to 1;
-    uint64_t block_raddr = kv_raddr - (kv_raddr % mm_block_size_);
-    uint32_t subblock_8byte_offset = subblock_id / 64;
-    uint64_t bmap_addr = block_raddr + subblock_8byte_offset * sizeof(uint64_t); //get the conresponding address in bitmap
-    uint64_t add_value = 1 << (subblock_id % 64);
-    if (bmap_addr > block_raddr + chunk_size_ * bmap_block_num_) {
-        printf("Error free!\n");
-        exit(1);
-    }
-
-    char tmp[256] = {0};
-    std::string addr_str(tmp);
-    // free_faa_map_[addr_str] += add_value;   how to manage bitmap?
+    // uint32_t subblock_id = (kv_raddr % (chunk_size_ * num_chunks_)) / chunk_size_;
+    // uint64_t block_addr = kv_raddr - (kv_raddr % mm_block_size_);
+    // uint32_t subblock_8byte_offset = subblock_id / 64;
+    // uint64_t bmap_addr = block_addr + subblock_8byte_offset * sizeof(uint64_t); //get the conresponding blocks start address in bitmap
+    // uint64_t add_value = 1 << (subblock_id % 64); //set the bit corrspinding bmap_addr to 1.
+    // if (bmap_addr > block_addr + chunk_size_ * bmap_block_num_) {
+    //     printf("Error free!\n");
+    //     exit(1);
+    // }
+    // set_bit_atomic(&bmap_addr,add_value); //atomic set operation
+    // std::string addr_str(std::to_string(bmap_addr));
+    // free_kv_subblock_map_[addr_str] += add_value;  //record them for background GC.
+    return;
 }
 
 void MemoryPool::mm_free_cur(const MMAllocCtx * ctx) {
@@ -99,10 +104,9 @@ void MemoryPool::mm_free_cur(const MMAllocCtx * ctx) {
     return;
 }
 
-
 void MemoryPool::mm_alloc_subtable(MMAllocSubtableCtx *ctx) {
     
-    // acquire the address of subtable
+    // acquire the address of subtable, address of different subtables are non-continuous.
     ctx->addr =reinterpret_cast<uint64_t>(malloc(SUBTABLE_LEN));
     
     // initialize buckets for subtable
@@ -121,7 +125,6 @@ void MemoryPool::mm_alloc_subtable(MMAllocSubtableCtx *ctx) {
 
     return;
 }
-
 
 
 
