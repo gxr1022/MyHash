@@ -1,3 +1,4 @@
+#pragma once
 #include <vector>
 #include <string>
 #include <optional>
@@ -9,10 +10,7 @@
 #include <deque>
 #include <assert.h>
 #include <string.h>
-
 #include <unordered_map>
-
-#include "Myhash.h"
 
 enum AllocType {
     TYPE_SUBTABLE = 1,
@@ -66,10 +64,10 @@ public:
     // void initial_alloc_subtable();
 
     void mm_alloc_subblock(size_t size, MMAllocCtx * ctx);
-    void mm_free_subblock(Slot* target_slot);
+    void mm_free_subblock(uint64_t kv_addr);
     void mm_free_cur(const MMAllocCtx * ctx);
 
-    void mm_alloc_subtable(MMAllocSubtableCtx * ctx);
+    void mm_alloc_subtable(MMAllocSubtableCtx * ctx,size_t alloc_len);
     
     ~MemoryPool() {
         for(int i=0;i<meta_info_.size();i++)

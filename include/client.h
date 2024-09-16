@@ -1,9 +1,9 @@
+#pragma once
 #include <vector>
 #include <string>
 #include <optional>
 #include <cmath>
 #include <cstdint>
-#include "Myhash.h"
 #include <mutex>
 #include <atomic>
 #include <fstream>
@@ -11,6 +11,8 @@
 #include <cassert>
 #include <iomanip>
 #include <thread>
+
+#include "Myhash.h"
 
 DEFINE_uint64(str_key_size, 8, "size of key (bytes)");
 DEFINE_uint64(str_value_size, 56, "size of value (bytes)");
@@ -43,6 +45,7 @@ public:
     ~Client();
     void client_ops_cnt(uint32_t ops_num);
     void load_and_run();
+    void standard_report(const std::string &prefix, const std::string &name, const std::string &value);
 
     std::string from_uint64_to_string(uint64_t value,uint64_t value_size);
     void benchmark_report(const std::string benchmark_prefix, const std::string &name, const std::string &value)
@@ -169,7 +172,7 @@ void Client::client_ops_cnt(uint32_t ops_num) {
     return;
 }
 
-void standard_report(const std::string &prefix, const std::string &name, const std::string &value)
+void Client::standard_report(const std::string &prefix, const std::string &name, const std::string &value)
 {
     std::cout << FLAGS_report_prefix << prefix + "_" << name << " : " << value << std::endl;
 }

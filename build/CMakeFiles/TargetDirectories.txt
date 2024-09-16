@@ -1,0 +1,3 @@
+/mnt/nvme0/home/gxr/Myhash/build/CMakeFiles/myhash.dir
+/mnt/nvme0/home/gxr/Myhash/build/CMakeFiles/edit_cache.dir
+/mnt/nvme0/home/gxr/Myhash/build/CMakeFiles/rebuild_cache.dir

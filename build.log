@@ -1,0 +1,29 @@
+/usr/bin/cmake -S/mnt/nvme0/home/gxr/Myhash -B/mnt/nvme0/home/gxr/Myhash/build --check-build-system CMakeFiles/Makefile.cmake 0
+/usr/bin/cmake -E cmake_progress_start /mnt/nvme0/home/gxr/Myhash/build/CMakeFiles /mnt/nvme0/home/gxr/Myhash/build//CMakeFiles/progress.marks
+/usr/bin/gmake  -f CMakeFiles/Makefile2 all
+gmake[1]: Entering directory '/mnt/nvme0/home/gxr/Myhash/build'
+/usr/bin/gmake  -f CMakeFiles/myhash.dir/build.make CMakeFiles/myhash.dir/depend
+gmake[2]: Entering directory '/mnt/nvme0/home/gxr/Myhash/build'
+cd /mnt/nvme0/home/gxr/Myhash/build && /usr/bin/cmake -E cmake_depends "Unix Makefiles" /mnt/nvme0/home/gxr/Myhash /mnt/nvme0/home/gxr/Myhash /mnt/nvme0/home/gxr/Myhash/build /mnt/nvme0/home/gxr/Myhash/build /mnt/nvme0/home/gxr/Myhash/build/CMakeFiles/myhash.dir/DependInfo.cmake --color=
+Dependencies file "CMakeFiles/myhash.dir/src/Myhash.cpp.o.d" is newer than depends file "/mnt/nvme0/home/gxr/Myhash/build/CMakeFiles/myhash.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/myhash.dir/src/client.cpp.o.d" is newer than depends file "/mnt/nvme0/home/gxr/Myhash/build/CMakeFiles/myhash.dir/compiler_depend.internal".
+Dependencies file "CMakeFiles/myhash.dir/src/mm.cpp.o.d" is newer than depends file "/mnt/nvme0/home/gxr/Myhash/build/CMakeFiles/myhash.dir/compiler_depend.internal".
+Consolidate compiler generated dependencies of target myhash
+gmake[2]: Leaving directory '/mnt/nvme0/home/gxr/Myhash/build'
+/usr/bin/gmake  -f CMakeFiles/myhash.dir/build.make CMakeFiles/myhash.dir/build
+gmake[2]: Entering directory '/mnt/nvme0/home/gxr/Myhash/build'
+[ 25%] Building CXX object CMakeFiles/myhash.dir/src/client.cpp.o
+/usr/bin/c++ -DGFLAGS_IS_A_DLL=0 -I/mnt/nvme0/home/gxr/Myhash/include -O3 -DNDEBUG -MD -MT CMakeFiles/myhash.dir/src/client.cpp.o -MF CMakeFiles/myhash.dir/src/client.cpp.o.d -o CMakeFiles/myhash.dir/src/client.cpp.o -c /mnt/nvme0/home/gxr/Myhash/src/client.cpp
+[ 50%] Building CXX object CMakeFiles/myhash.dir/src/Myhash.cpp.o
+/usr/bin/c++ -DGFLAGS_IS_A_DLL=0 -I/mnt/nvme0/home/gxr/Myhash/include -O3 -DNDEBUG -MD -MT CMakeFiles/myhash.dir/src/Myhash.cpp.o -MF CMakeFiles/myhash.dir/src/Myhash.cpp.o.d -o CMakeFiles/myhash.dir/src/Myhash.cpp.o -c /mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp: In member function ‘void Myhash::find_kv_in_buckets(KVReqCtx*)’:
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp:237:64: warning: pointer of type ‘void *’ used in arithmetic [-Wpointer-arith]
+  237 |                 memcpy(&ctx->checksum, ctx->ret_val.value_addr + ctx->kv_info->value_len, sizeof(uint64_t));
+      |                                        ~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+[ 75%] Linking CXX executable myhash
+/usr/bin/cmake -E cmake_link_script CMakeFiles/myhash.dir/link.txt --verbose=1
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/myhash.dir/src/client.cpp.o CMakeFiles/myhash.dir/src/mm.cpp.o CMakeFiles/myhash.dir/src/Myhash.cpp.o -o myhash  -Wl,-rpath,/usr/local/lib /usr/local/lib/libgflags.so.2.2.2 
+gmake[2]: Leaving directory '/mnt/nvme0/home/gxr/Myhash/build'
+[100%] Built target myhash
+gmake[1]: Leaving directory '/mnt/nvme0/home/gxr/Myhash/build'
+/usr/bin/cmake -E cmake_progress_start /mnt/nvme0/home/gxr/Myhash/build/CMakeFiles 0

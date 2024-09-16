@@ -52,7 +52,15 @@ void Myhash::init_subtable()
             MMAllocSubtableCtx *subtable_info = (MMAllocSubtableCtx *)malloc(sizeof(MMAllocSubtableCtx));
             subtable_info->subtable_idx = subtable_idx;
 
-            mm_->mm_alloc_subtable(subtable_info);
+            mm_->mm_alloc_subtable(subtable_info,SUBTABLE_LEN);
+
+            // initialize buckets for subtable
+            for (int j = 0; j < HASH_ADDRESSABLE_BUCKET_NUM; j ++) {
+                Bucket * bucket = (Bucket *)subtable_info->addr + j;
+                memset(bucket, 0, sizeof(Bucket));
+                bucket->h.local_depth = HASH_INIT_LOCAL_DEPTH;
+                bucket->h.prefix = subtable_info->subtable_idx;
+            }
 
             root_->subtable_entry[subtable_idx].local_depth = HASH_INIT_LOCAL_DEPTH;
             HashIndexConvert64To48Bits(subtable_info->addr, root_->subtable_entry[subtable_idx].pointer);
@@ -80,29 +88,29 @@ void * Myhash::kv_search(KVInfo * kv_info)
     return ctx.ret_val.value_addr;
 }
 
-void Myhash::find_kv_in_buckets(KVReqCtx * ctx) {
-    get_comb_bucket_info(ctx);
-    // search all kv pair that finger print matches, myhash use two hash function to solve hash collision, use one overﬂow bucket to store overflow kv pairs.
-    for (int i = 0; i < 4; i ++) {
-        for (int j = 0; j < HASH_ASSOC_NUM; j ++) { // every bucket has HASH_ASSOC_NUM slot
-            if (ctx->slot_arr[i][j].fp == ctx->hash_info.fp && ctx->slot_arr[i][j].len != 0) {
-                //I am not sure if I need to compare two keys. Or fp is the only identifier for a key?
+// void Myhash::find_kv_in_buckets(KVReqCtx * ctx) {
+//     get_comb_bucket_info(ctx);
+//     // search all kv pair that finger print matches, myhash use two hash function to solve hash collision, use one overﬂow bucket to store overflow kv pairs.
+//     for (int i = 0; i < 4; i ++) {
+//         for (int j = 0; j < HASH_ASSOC_NUM; j ++) { // every bucket has HASH_ASSOC_NUM slot
+//             if (ctx->slot_arr[i][j].fp == ctx->hash_info.fp && ctx->slot_arr[i][j].len != 0) {
+//                 //I am not sure if I need to compare two keys. Or fp is the only identifier for a key?
 
-                KVRWAddr cur_kv_addr;
-                cur_kv_addr.addr = HashIndexConvert48To64Bits(ctx->slot_arr[i][j].pointer);
-                // cur_kv_addr.len    = ctx->slot_arr[i][j].len * mm_->chunk_size_;
-                // get KV pair   |key_len|V_len|Key|Value|
-                ctx->ret_val.value_addr = (void*)(cur_kv_addr.addr + 6 + ctx->kv_info->key_len); 
-                memcpy(&ctx->checksum, ctx->ret_val.value_addr + ctx->kv_info->value_len, sizeof(uint64_t)); 
-                return;
-            }
-        }
-    }
+//                 KVRWAddr cur_kv_addr;
+//                 cur_kv_addr.addr = HashIndexConvert48To64Bits(ctx->slot_arr[i][j].pointer);
+//                 // cur_kv_addr.len    = ctx->slot_arr[i][j].len * mm_->chunk_size_;
+//                 // get KV pair   |key_len|V_len|Key|Value|
+//                 ctx->ret_val.value_addr = (void*)(cur_kv_addr.addr + 6 + ctx->kv_info->key_len); 
+//                 memcpy(&ctx->checksum, ctx->ret_val.value_addr + ctx->kv_info->value_len, sizeof(uint64_t)); 
+//                 return;
+//             }
+//         }
+//     }
 
-    ctx->ret_val.value_addr = NULL;
-    return;
+//     ctx->ret_val.value_addr = NULL;
+//     return;
 
-}
+// }
 
 int Myhash::kv_update(KVInfo * kv_info)
 {
@@ -117,7 +125,7 @@ int Myhash::kv_update(KVInfo * kv_info)
     mm_->mm_alloc_subblock(kv_block_size, &ctx.mm_alloc_ctx); 
 
     //acquire the address of KVblock and write key-value pair and checksum
-    void* KVblock_addr = (void*)ctx.mm_alloc_ctx.addr;
+    uint64_t* KVblock_addr = (uint64_t*)ctx.mm_alloc_ctx.addr;
     uint64_t checksum = SetChecksum(&(ctx.kv_info)->key_addr,(ctx.kv_info)->key_len,&(ctx.kv_info)->value_addr,(ctx.kv_info)->value_len);
     memcpy(KVblock_addr, &(ctx.kv_info)->key_len, 2);
     memcpy(KVblock_addr+2, &(ctx.kv_info)->value_len, 4);
@@ -134,7 +142,8 @@ int Myhash::kv_update(KVInfo * kv_info)
     find_slot_in_buckets(&ctx,target_slot);
 
     //release the KV subblock of old key-value pair.
-    mm_->mm_free_subblock(target_slot); 
+    uint64_t kv_raddr = HashIndexConvert48To64Bits(target_slot->pointer);
+    mm_->mm_free_subblock(kv_raddr); 
 
     if(target_slot!=NULL)
     {
@@ -197,7 +206,8 @@ void Myhash::check_kv_in_candidate_buckets(KVReqCtx * ctx) {
                 }
                 else{
                     //release the kv subblock of duplicated keys.
-                    mm_ -> mm_free_subblock(&ctx->slot_arr[i][j]);
+                    uint64_t kv_raddr = HashIndexConvert48To64Bits(target_slot->pointer);
+                    mm_->mm_free_subblock(kv_raddr); 
 
                     //Set target_slot of duplicated keys to 0;
                     uint64_t atomic_slot_val = 0;
@@ -242,7 +252,7 @@ void Myhash::kv_insert_read_buckets_and_write_kv(KVReqCtx * ctx) {
     mm_->mm_alloc_subblock(kv_block_size, &ctx->mm_alloc_ctx); 
 
     //acquire the address of KVblock and write key-value pair
-    void* KVblock_addr = (void*)ctx->mm_alloc_ctx.addr;
+    uint64_t* KVblock_addr = (uint64_t*)ctx->mm_alloc_ctx.addr;
     uint64_t checksum = SetChecksum(&(ctx->kv_info)->key_addr,(ctx->kv_info)->key_len,&(ctx->kv_info)->value_addr,(ctx->kv_info)->value_len);
     memcpy(KVblock_addr, &(ctx->kv_info)->key_len, 2);
     memcpy(KVblock_addr + 2, &(ctx->kv_info)->value_len, 4);
@@ -386,8 +396,8 @@ void Myhash::find_empty_slot(KVTableAddrInfo *tbl_addr_info, Bucket* f_com_bucke
     uint32_t f_free_num, s_free_num;
     uint32_t f_free_slot_idx, s_free_slot_idx;
 
-    int32_t bucket_idx = -1;
-    int32_t slot_idx = -1;
+    int32_t local_bucket_idx = -1;
+    int32_t local_slot_idx = -1;
 
     for (int i = 0; i < 2; i ++) 
     {
@@ -396,20 +406,20 @@ void Myhash::find_empty_slot(KVTableAddrInfo *tbl_addr_info, Bucket* f_com_bucke
 
         if (f_free_num > 0 || s_free_num > 0) {
             if (f_free_num >= s_free_num) {
-                bucket_idx = f_main_idx;
-                slot_idx = f_free_slot_idx;
+                local_bucket_idx = f_main_idx;
+                local_slot_idx = f_free_slot_idx;
             } else {
                 // Help to differentiate the first com bucket and the second com bucket.
-                bucket_idx = 2 + s_main_idx;
-                slot_idx = s_free_slot_idx;
+                local_bucket_idx = 2 + s_main_idx;
+                local_slot_idx = s_free_slot_idx;
             }
         }
         f_main_idx = (f_main_idx + 1) % 2;
         s_main_idx = (s_main_idx + 1) % 2;
     }
 
-    bucket_idx = bucket_idx;
-    slot_idx   = slot_idx;
+    bucket_idx = local_bucket_idx;
+    slot_idx   = local_slot_idx;
     return;
 }
 
@@ -450,7 +460,8 @@ int Myhash::kv_delete(KVInfo * kv_info)
     find_slot_in_buckets(&ctx,target_slot);
 
     // Release memory of KV block;
-    mm_->mm_free_subblock(target_slot);  // to do... consider double free leak?
+    uint64_t kv_raddr = HashIndexConvert48To64Bits(target_slot->pointer);
+    mm_->mm_free_subblock(kv_raddr); 
 
     //Set target_slot to 0;
     uint64_t atomic_slot_val = 0;
@@ -645,4 +656,19 @@ void Myhash::free_batch() {
     }
     return;
 }
+
+uint32_t Myhash::GetFreeSlotNum(Bucket * bucket, uint32_t * free_idx) {
+    *free_idx = HASH_ASSOC_NUM;
+    uint32_t free_num = 0;
+    for (int i = 0; i < HASH_ASSOC_NUM; i++) {
+      // when initialize the subtable, set all bucket to 0.
+        if (bucket->slots[i].fp == 0 && bucket->slots[i].len == 0 && IsEmptyPointer(bucket->slots[i].pointer, 5)) {
+            // free_idx_list[free_num] = i;
+            free_num ++;
+            *free_idx = i;
+        }
+    }
+    return free_num;
+}
+
 

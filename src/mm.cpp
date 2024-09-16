@@ -64,9 +64,8 @@ void MemoryPool::mm_alloc_subblock(size_t size, MMAllocCtx * ctx) {
 }
 
 // release a KV pair, how to ensure memory free is thread-safe ? 
-void MemoryPool::mm_free_subblock(Slot* slot) {
-    // Slot slot = *(Slot *)&orig_slot_val;
-    uint64_t kv_raddr = HashIndexConvert48To64Bits(slot->pointer); // get key-value pair address
+void MemoryPool::mm_free_subblock(uint64_t kv_raddr) {
+
     Chunk last_allocated;
     memset(&last_allocated, 0, sizeof(Chunk));
     last_allocated.addr = kv_raddr;
@@ -104,19 +103,11 @@ void MemoryPool::mm_free_cur(const MMAllocCtx * ctx) {
     return;
 }
 
-void MemoryPool::mm_alloc_subtable(MMAllocSubtableCtx *ctx) {
+void MemoryPool::mm_alloc_subtable(MMAllocSubtableCtx *ctx, size_t alloc_len) {
     
     // acquire the address of subtable, address of different subtables are non-continuous.
-    ctx->addr =reinterpret_cast<uint64_t>(malloc(SUBTABLE_LEN));
+    ctx->addr =reinterpret_cast<uint64_t>(malloc(alloc_len));
     
-    // initialize buckets for subtable
-    for (int j = 0; j < HASH_ADDRESSABLE_BUCKET_NUM; j ++) {
-        Bucket * bucket = (Bucket *)ctx->addr + j;
-        memset(bucket, 0, sizeof(Bucket));
-        bucket->h.local_depth = HASH_INIT_LOCAL_DEPTH;
-        bucket->h.prefix = ctx->subtable_idx;
-    }
-
     // record the Memory block information in meta_info
     MetaAddrInfo* meta_info = (MetaAddrInfo *)malloc(sizeof(MetaAddrInfo));
     meta_info->meta_info_type=TYPE_SUBTABLE;
