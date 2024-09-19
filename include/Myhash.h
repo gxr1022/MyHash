@@ -23,7 +23,7 @@
 #define HASH_ASSOC_NUM                 (7)
 #define MAX_REP_NUM                    (10)
 #define HASH_INIT_SUBTABLE_NUM         (1 << HASH_INIT_LOCAL_DEPTH)
-#define HASH_ADDRESSABLE_BUCKET_NUM    (34000ULL)
+#define HASH_ADDRESSABLE_BUCKET_NUM    (30000ULL)
 #define HASH_SUBTABLE_BUCKET_NUM       (HASH_ADDRESSABLE_BUCKET_NUM * 3 / 2) //Combined buckets
 #define SUBTABLE_LEN          (HASH_ADDRESSABLE_BUCKET_NUM * sizeof(Bucket))
 #define SUBTABLE_RES_LEN      (HASH_MAX_SUBTABLE_NUM * SUBTABLE_LEN)
@@ -52,7 +52,7 @@ struct Bucket
 
 struct Subtable
 {  
-  uint8_t lock; 
+  uint8_t lock;  // it is used for resize operation
   uint8_t local_depth;
   uint8_t pointer[6];
 };
@@ -63,6 +63,7 @@ struct KVInfo {
     uint16_t key_len;
     uint32_t value_len;
     uint8_t ops_type;
+    uint8_t ops_id;
 };
 
 struct KVHashInfo {
@@ -159,6 +160,9 @@ private:
     void check_kv_in_candidate_buckets(KVReqCtx * ctx);
     void find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot);
     int atomic_write_to_slot(Slot* target_slot,uint64_t expected, uint64_t new_value);
+    int atomic_write_to_subtable(Subtable* target_subtable,uint64_t expected, uint64_t new_value);
+    int atomic_cas_to_bucket_header(Header* target_header,uint64_t expected, uint64_t new_value);
+    int atomic_write_to_bucket_header(Header* target_header, uint64_t new_value);
     uint32_t GetFreeSlotNum(Bucket * bucket, uint32_t * free_idx);
 
     inline char * get_key(KVInfo * kv_info) {
@@ -205,14 +209,44 @@ static inline void ConvertSlotToAddr(Slot * slot, KVRWAddr * kv_addr) {
 
 static inline uint64_t ConvertSlotTo64Bits(const Slot& slot) {
     uint64_t packed = 0;
-    packed |= static_cast<uint64_t>(slot.fp) << 56;
-    packed |= static_cast<uint64_t>(slot.len) << 48;
-
-    uint64_t pointer_value = 0;
-    memcpy(&pointer_value, slot.pointer, 6);
-    packed |= pointer_value & 0xFFFFFFFFFFFF;  
+    packed |= static_cast<uint64_t>(slot.fp);
+    packed |= static_cast<uint64_t>(slot.len) << 8;
+    for (int i = 0; i < 6; ++i) {
+        packed |= static_cast<uint64_t>(slot.pointer[i]) << (16 + 8 * i);
+    }
 
     return packed;
+}
+
+static inline uint64_t pack_subtable(const Subtable& subtable) {
+    uint64_t packed = 0;
+    packed |= (static_cast<uint64_t>(subtable.lock));          // Pack lock (1 byte)
+    packed |= (static_cast<uint64_t>(subtable.local_depth) << 8);    // Pack local_depth (1 byte)
+    
+    // Pack pointer (6 bytes)
+    for (int i = 0; i < 6; ++i) {
+        packed |= static_cast<uint64_t>(subtable.pointer[i]) << (16 + 8 * i);
+    }
+    return packed;
+}
+
+static inline uint64_t pack_subtable_modified_fields(uint8_t locked,uint8_t new_local_depth,uint8_t pointer[6]) {
+    uint64_t packed = 0;
+    packed |= (static_cast<uint64_t>(locked));
+    packed |= (static_cast<uint64_t>(new_local_depth) << 8);
+
+    for (int i = 0; i < 6; ++i) {
+        packed |= static_cast<uint64_t>(pointer[i]) << (16 + 8 * i);
+    }
+    return packed;
+}
+
+uint64_t pack_header_fields(uint32_t local_depth, uint32_t prefix) {
+    uint64_t result = 0;
+    result |= static_cast<uint64_t>(local_depth);
+    result |= static_cast<uint64_t>(prefix) << 32;
+    
+    return result;
 }
 
 

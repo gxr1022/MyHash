@@ -34,22 +34,23 @@ void MemoryPool::initial_alloc_KVblock()
     return;
 }
 
-
 // allocate subblock for new KV pair if raw subblock doesn't have enough space.
 void MemoryPool::mm_alloc_subblock(size_t size, MMAllocCtx * ctx) {
 
     int ret = 0;
     size_t aligned_size = get_aligned_size(size);
-    int num_subblocks_required = aligned_size / chunk_size_;  // chunk_size_ = 64
+    int num_subblocks_required = aligned_size / chunk_size_; 
     assert(num_subblocks_required == 1); // only allocate one subblock
 
     //How to ensure the memory allocation is thread safe? to do ……
+    std::lock_guard<std::mutex> lock(alloc_new_block_lock_);
     assert(subblock_free_queue_.size() > 0);
     Chunk alloc_subblock = subblock_free_queue_.front();
     subblock_free_queue_.pop_front();
 
-    if (subblock_free_queue_.size() == 0) {
+    if (subblock_free_queue_.empty()) {
         //Dynamically allocate new memory pool, to be done……
+        printf("Error: chunks in subblock_free_queue_ have run out! \n");
         return;
     }
 
@@ -69,6 +70,8 @@ void MemoryPool::mm_free_subblock(uint64_t kv_raddr) {
     Chunk last_allocated;
     memset(&last_allocated, 0, sizeof(Chunk));
     last_allocated.addr = kv_raddr;
+    
+    std::lock_guard<std::mutex> lock(alloc_new_block_lock_);
     subblock_free_queue_.push_front(last_allocated);
     
     // update bitmap, set subblock to 1;
@@ -93,6 +96,7 @@ void MemoryPool::mm_free_cur(const MMAllocCtx * ctx) {
     memset(&last_allocated, 0, sizeof(Chunk));
     last_allocated.addr = ctx->addr;
 
+    std::lock_guard<std::mutex> lock(alloc_new_block_lock_);
     subblock_free_queue_.push_front(last_allocated);
 
     // 2. reconstruct last allocated to be last-last allocated

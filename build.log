@@ -12,17 +12,39 @@ Consolidate compiler generated dependencies of target myhash
 gmake[2]: Leaving directory '/mnt/nvme0/home/gxr/Myhash/build'
 /usr/bin/gmake  -f CMakeFiles/myhash.dir/build.make CMakeFiles/myhash.dir/build
 gmake[2]: Entering directory '/mnt/nvme0/home/gxr/Myhash/build'
-[ 25%] Building CXX object CMakeFiles/myhash.dir/src/client.cpp.o
-/usr/bin/c++ -DGFLAGS_IS_A_DLL=0 -I/mnt/nvme0/home/gxr/Myhash/include -O3 -DNDEBUG -MD -MT CMakeFiles/myhash.dir/src/client.cpp.o -MF CMakeFiles/myhash.dir/src/client.cpp.o.d -o CMakeFiles/myhash.dir/src/client.cpp.o -c /mnt/nvme0/home/gxr/Myhash/src/client.cpp
+[ 25%] Building CXX object CMakeFiles/myhash.dir/src/mm.cpp.o
+/usr/bin/c++ -DGFLAGS_IS_A_DLL=0 -I/mnt/nvme0/home/gxr/Myhash/include -g -MD -MT CMakeFiles/myhash.dir/src/mm.cpp.o -MF CMakeFiles/myhash.dir/src/mm.cpp.o.d -o CMakeFiles/myhash.dir/src/mm.cpp.o -c /mnt/nvme0/home/gxr/Myhash/src/mm.cpp
 [ 50%] Building CXX object CMakeFiles/myhash.dir/src/Myhash.cpp.o
-/usr/bin/c++ -DGFLAGS_IS_A_DLL=0 -I/mnt/nvme0/home/gxr/Myhash/include -O3 -DNDEBUG -MD -MT CMakeFiles/myhash.dir/src/Myhash.cpp.o -MF CMakeFiles/myhash.dir/src/Myhash.cpp.o.d -o CMakeFiles/myhash.dir/src/Myhash.cpp.o -c /mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp
+/usr/bin/c++ -DGFLAGS_IS_A_DLL=0 -I/mnt/nvme0/home/gxr/Myhash/include -g -MD -MT CMakeFiles/myhash.dir/src/Myhash.cpp.o -MF CMakeFiles/myhash.dir/src/Myhash.cpp.o.d -o CMakeFiles/myhash.dir/src/Myhash.cpp.o -c /mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp
 /mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp: In member function ‘void Myhash::find_kv_in_buckets(KVReqCtx*)’:
 /mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp:237:64: warning: pointer of type ‘void *’ used in arithmetic [-Wpointer-arith]
   237 |                 memcpy(&ctx->checksum, ctx->ret_val.value_addr + ctx->kv_info->value_len, sizeof(uint64_t));
       |                                        ~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp: In member function ‘void Myhash::kv_insert_read_buckets_and_write_kv(KVReqCtx*)’:
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp:264:25: warning: pointer of type ‘void *’ used in arithmetic [-Wpointer-arith]
+  264 |     memcpy(KVblock_addr + 2, &(ctx->kv_info)->value_len, sizeof(uint32_t));
+      |            ~~~~~~~~~~~~~^~~
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp:265:25: warning: pointer of type ‘void *’ used in arithmetic [-Wpointer-arith]
+  265 |     memcpy(KVblock_addr + 6, &(ctx->kv_info)->key_addr, (ctx->kv_info)->key_len);
+      |            ~~~~~~~~~~~~~^~~
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp:266:25: warning: pointer of type ‘void *’ used in arithmetic [-Wpointer-arith]
+  266 |     memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len, &(ctx->kv_info)->value_addr,(ctx->kv_info)->value_len);
+      |            ~~~~~~~~~~~~~^~~
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp:266:29: warning: pointer of type ‘void *’ used in arithmetic [-Wpointer-arith]
+  266 |     memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len, &(ctx->kv_info)->value_addr,(ctx->kv_info)->value_len);
+      |            ~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp:267:25: warning: pointer of type ‘void *’ used in arithmetic [-Wpointer-arith]
+  267 |     memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len + (ctx->kv_info)->value_len,&checksum,8);
+      |            ~~~~~~~~~~~~~^~~
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp:267:29: warning: pointer of type ‘void *’ used in arithmetic [-Wpointer-arith]
+  267 |     memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len + (ctx->kv_info)->value_len,&checksum,8);
+      |            ~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~
+/mnt/nvme0/home/gxr/Myhash/src/Myhash.cpp:267:55: warning: pointer of type ‘void *’ used in arithmetic [-Wpointer-arith]
+  267 |     memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len + (ctx->kv_info)->value_len,&checksum,8);
+      |            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~
 [ 75%] Linking CXX executable myhash
 /usr/bin/cmake -E cmake_link_script CMakeFiles/myhash.dir/link.txt --verbose=1
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/myhash.dir/src/client.cpp.o CMakeFiles/myhash.dir/src/mm.cpp.o CMakeFiles/myhash.dir/src/Myhash.cpp.o -o myhash  -Wl,-rpath,/usr/local/lib /usr/local/lib/libgflags.so.2.2.2 
+/usr/bin/c++ -g CMakeFiles/myhash.dir/src/client.cpp.o CMakeFiles/myhash.dir/src/mm.cpp.o CMakeFiles/myhash.dir/src/Myhash.cpp.o -o myhash  -Wl,-rpath,/usr/local/lib /usr/local/lib/libgflags.so.2.2.2 
 gmake[2]: Leaving directory '/mnt/nvme0/home/gxr/Myhash/build'
 [100%] Built target myhash
 gmake[1]: Leaving directory '/mnt/nvme0/home/gxr/Myhash/build'

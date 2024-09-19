@@ -15,12 +15,12 @@
 #include "Myhash.h"
 
 DEFINE_uint64(str_key_size, 8, "size of key (bytes)");
-DEFINE_uint64(str_value_size, 56, "size of value (bytes)");
-DEFINE_uint64(num_threads, 1, "the number of threads");
+DEFINE_uint64(str_value_size, 42, "size of value (bytes)");
+DEFINE_uint64(num_threads, 2, "the number of threads");
 DEFINE_uint64(num_of_ops, 100000, "the number of operations");
 DEFINE_uint64(time_interval, 10, "the time interval of insert operations");
 DEFINE_uint64(chunk_size, 64, "the size of chunck size");
-DEFINE_uint64(num_chunks, 10000000, "the number of chunks in a memory block");
+DEFINE_uint64(num_chunks, 1000000, "the number of chunks in a memory block");
 DEFINE_string(report_prefix, "[report] ", "prefix of report data");
 
 class Client
@@ -137,10 +137,11 @@ void Client::client_ops_cnt(uint32_t ops_num) {
     std::string key;
     for (int i = 0; i < ops_num; i ++) {
         key=from_uint64_to_string(rand,key_size_);
-        KVInfo *kv_info;
+        KVInfo *kv_info = new KVInfo();
         kv_info->key_addr = &key;
         kv_info->key_len = key_size_;
         kv_info->value_len = value_size_;
+        kv_info->ops_id = i;
         kv_info->ops_type = KV_REQ_INSERT; // just try insert now.
 
         switch (kv_info->ops_type) {

@@ -9,8 +9,10 @@
 #include <cassert>
 #include <deque>
 #include <assert.h>
+#include <mutex>
 #include <string.h>
 #include <unordered_map>
+
 
 enum AllocType {
     TYPE_SUBTABLE = 1,
@@ -46,6 +48,7 @@ public:
     uint64_t mm_block_size_; 
     uint32_t cur_mm_block_idx_;
     uint32_t bmap_block_num_;
+    std::mutex alloc_new_block_lock_; 
     
     std::deque<Chunk> subblock_free_queue_; // Shared resources.
     Chunk last_allocated_info_; // Shared resources. Need synchronization.
@@ -74,6 +77,12 @@ public:
         {
             free((void*)(meta_info_[i]->addr));
         }
+
+        for (MetaAddrInfo* info : meta_info_) {
+            delete info;  
+        }
+        meta_info_.clear();  
+
     }
 
     inline size_t get_aligned_size(size_t size) {
