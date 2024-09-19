@@ -90,7 +90,7 @@ struct KVRWAddr {
 };
 
 struct HashRoot{
-    uint64_t global_depth;
+    std::atomic<uint64_t> global_depth;
     uint64_t max_global_depth;
     uint64_t init_local_depth;
 
@@ -158,7 +158,7 @@ private:
     void find_empty_slot(KVTableAddrInfo *tbl_addr_info, Bucket* f_com_bucket,Bucket* s_com_bucket,int32_t &bucket_idx,int32_t &slot_idx);
     void find_kv_in_buckets(KVReqCtx * ctx);
     void check_kv_in_candidate_buckets(KVReqCtx * ctx);
-    void find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot);
+    int find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot);
     int atomic_write_to_slot(Slot* target_slot,uint64_t expected, uint64_t new_value);
     int atomic_write_to_subtable(Subtable* target_subtable,uint64_t expected, uint64_t new_value);
     int atomic_cas_to_bucket_header(Header* target_header,uint64_t expected, uint64_t new_value);
@@ -244,6 +244,7 @@ static inline uint64_t pack_subtable_modified_fields(uint8_t locked,uint8_t new_
 uint64_t pack_header_fields(uint32_t local_depth, uint32_t prefix) {
     uint64_t result = 0;
     result |= static_cast<uint64_t>(local_depth);
+
     result |= static_cast<uint64_t>(prefix) << 32;
     
     return result;

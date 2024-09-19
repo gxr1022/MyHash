@@ -85,39 +85,20 @@ void * Myhash::kv_search(KVInfo * kv_info)
     get_kv_hash_info((uint64_t*)ctx.kv_info->key_addr,ctx.kv_info->key_len, &ctx.hash_info);
     get_kv_addr_info(&ctx.hash_info, &ctx.tbl_addr_info); // initialize ctx.hash_info
     find_kv_in_buckets(&ctx);
-    if(ctx.ret_val.value_addr!=NULL && VerifyChecksum(ctx.kv_info->key_addr,ctx.kv_info->key_len,ctx.ret_val.value_addr,ctx.kv_info->value_len,ctx.checksum)){
-        // maybe it doesn't found, maybe it has been released by another thread who excuted delete/update operation. Both is OK.
-        return ctx.ret_val.value_addr;
+    
+    if(ctx.ret_val.value_addr==NULL && ((ctx.hash_info.local_depth != ctx.f_com_bucket->h.local_depth && ctx.hash_info.prefix != ctx.f_com_bucket->h.prefix) || (ctx.hash_info.local_depth != ctx.f_com_bucket[1].h.local_depth && ctx.hash_info.prefix != ctx.f_com_bucket[1].h.prefix) || (ctx.hash_info.local_depth != ctx.s_com_bucket->h.local_depth && ctx.hash_info.prefix != ctx.s_com_bucket->h.prefix) || (ctx.hash_info.local_depth != ctx.s_com_bucket[1].h.local_depth && ctx.hash_info.prefix != ctx.s_com_bucket[1].h.prefix) ))
+    {
+        ctx.hash_info.prefix = (ctx.hash_info.hash_value >> SUBTABLE_USED_HASH_BIT_NUM) & HASH_MASK(root_->global_depth);
+        ctx.hash_info.local_depth = root_->subtable_entry[ctx.hash_info.prefix].local_depth;        
+        get_kv_addr_info(&ctx.hash_info, &ctx.tbl_addr_info); 
+        find_kv_in_buckets(&ctx);
     }
-    else{
+    if(ctx.ret_val.value_addr!=NULL && !VerifyChecksum(ctx.kv_info->key_addr,ctx.kv_info->key_len,ctx.ret_val.value_addr,ctx.kv_info->value_len,ctx.checksum)){
+        // maybe it doesn't found, maybe it has been released by another thread who excuted delete/update operation. Both is OK.
         ctx.ret_val.value_addr = NULL;
     }
     return ctx.ret_val.value_addr;
 }
-
-// void Myhash::find_kv_in_buckets(KVReqCtx * ctx) {
-//     get_comb_bucket_info(ctx);
-//     // search all kv pair that finger print matches, myhash use two hash function to solve hash collision, use one overﬂow bucket to store overflow kv pairs.
-//     for (int i = 0; i < 4; i ++) {
-//         for (int j = 0; j < HASH_ASSOC_NUM; j ++) { // every bucket has HASH_ASSOC_NUM slot
-//             if (ctx->slot_arr[i][j].fp == ctx->hash_info.fp && ctx->slot_arr[i][j].len != 0) {
-//                 //I am not sure if I need to compare two keys. Or fp is the only identifier for a key?
-
-//                 KVRWAddr cur_kv_addr;
-//                 cur_kv_addr.addr = HashIndexConvert48To64Bits(ctx->slot_arr[i][j].pointer);
-//                 // cur_kv_addr.len    = ctx->slot_arr[i][j].len * mm_->chunk_size_;
-//                 // get KV pair   |key_len|V_len|Key|Value|
-//                 ctx->ret_val.value_addr = (void*)(cur_kv_addr.addr + 6 + ctx->kv_info->key_len); 
-//                 memcpy(&ctx->checksum, ctx->ret_val.value_addr + ctx->kv_info->value_len, sizeof(uint64_t)); 
-//                 return;
-//             }
-//         }
-//     }
-
-//     ctx->ret_val.value_addr = NULL;
-//     return;
-
-// }
 
 int Myhash::kv_update(KVInfo * kv_info)
 {
@@ -165,7 +146,7 @@ int Myhash::kv_update(KVInfo * kv_info)
     return ctx.ret_val.ret_code;
 }
 
-void Myhash::find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot)
+int Myhash::find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot)
 {
     get_comb_bucket_info(ctx);
 
@@ -174,10 +155,11 @@ void Myhash::find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot)
         for (int j = 0; j < HASH_ASSOC_NUM; j ++) { // every bucket has HASH_ASSOC_NUM slot
             if (ctx->slot_arr[i][j].fp == ctx->hash_info.fp && ctx->slot_arr[i][j].len != 0) {
                  target_slot = &ctx->slot_arr[i][j];
-                 return;
+                 return 0;
             }
         }
     }
+    return -1;
 }
 
 int Myhash::kv_insert(KVInfo * kv_info)
@@ -321,7 +303,8 @@ void Myhash::kv_resize(uint64_t cur_prefix, uint8_t cur_local_depth){
     atomic_write_to_subtable(target_subtable, expected_cur, atomic_subtable_val_cur);
 
     // 2.increse the global_depth by 1
-    root_ -> global_depth += 1;
+    // global_depth += 1;
+    root_ -> global_depth.fetch_add(1, std::memory_order_relaxed);
     
     // 3.update subtable entries to new directory
     int new_directory_size = 1 << root_ -> global_depth;
@@ -369,6 +352,11 @@ void Myhash::kv_resize(uint64_t cur_prefix, uint8_t cur_local_depth){
     for (int i = 0; i < HASH_ADDRESSABLE_BUCKET_NUM; i ++) 
     {
         Bucket * bucket_in_cur_subtbl = (Bucket *)cur_subtable_addr + i;
+        // atomically update the header of current bucket 
+        expected_header = pack_header_fields(cur_local_depth,cur_prefix);
+        atomic_header_val = pack_header_fields(new_local_depth,cur_prefix);
+        atomic_cas_to_bucket_header(&bucket_in_cur_subtbl->h,expected_header, atomic_header_val);
+
         for (int j = 0; j < HASH_ASSOC_NUM; j ++)
         { 
             Slot* target_slot = &bucket_in_cur_subtbl->slots[j];
@@ -381,7 +369,6 @@ void Myhash::kv_resize(uint64_t cur_prefix, uint8_t cur_local_depth){
             uint64_t iter_hash_value = VariableLengthHash((void *)iter_key_addr, iter_key_len, 0);
             uint64_t iter_key_prefix = (iter_hash_value >> SUBTABLE_USED_HASH_BIT_NUM) & HASH_MASK(root_->global_depth);
             
-            // if prefix == new_prefix, move it to new subtabble using atomic_write_to_subtablele. modify the prefix of buckets in new subtable.
             if (iter_key_prefix == new_prefix){
                 KVHashInfo iter_kv_hash_info;
                 KVTableAddrInfo tbl_addr_info;
@@ -389,23 +376,18 @@ void Myhash::kv_resize(uint64_t cur_prefix, uint8_t cur_local_depth){
                 get_kv_hash_info(&iter_key_addr,iter_key_len,&iter_kv_hash_info); // prefix, fp, hash_value,local_depth;
                 get_kv_addr_info(&iter_kv_hash_info, &tbl_addr_info);
 
-                // move KV pair to new subtable and update the header of new bucket.
+                // move KV pair to new subtable.
                 kv_resize_update_slot(iter_kv_subblock_addr,iter_num_of_subblocks,&iter_kv_hash_info,&tbl_addr_info); 
                 
                 // don't forget to reset current slot, note that we don't need to move KVsubblock.
                 uint64_t expected = *reinterpret_cast<uint64_t*>(target_slot);
                 atomic_write_to_slot(target_slot,expected,0);
             }
-            else{
-                // atomically update the header of current bucket 
-                expected_header = pack_header_fields(cur_local_depth,cur_prefix);
-                atomic_header_val = pack_header_fields(new_local_depth,iter_key_prefix);
-                atomic_cas_to_bucket_header(&bucket_in_cur_subtbl->h,expected_header, atomic_header_val);
-            }
+            
 
         }
     }
-    
+
     // unlock current and new subtable entry atomiclly.
     target_subtable = &root_->subtable_entry[cur_prefix];
     expected_cur = atomic_subtable_val_cur;
@@ -518,18 +500,27 @@ int Myhash::kv_delete(KVInfo * kv_info)
     get_kv_addr_info(&ctx.hash_info, &ctx.tbl_addr_info);
 
     Slot* target_slot;
-    find_slot_in_buckets(&ctx,target_slot);
+    int ret = find_slot_in_buckets(&ctx,target_slot);
+    if (ret == 0)
+    {
+        // Release memory of KV block;
+        uint64_t kv_raddr = HashIndexConvert48To64Bits(target_slot->pointer);
+        mm_->mm_free_subblock(kv_raddr); 
 
-    // Release memory of KV block;
-    uint64_t kv_raddr = HashIndexConvert48To64Bits(target_slot->pointer);
-    mm_->mm_free_subblock(kv_raddr); 
-
-    //Set target_slot to 0;
-    uint64_t atomic_slot_val = 0;
-    uint64_t expected = *reinterpret_cast<uint64_t*>(target_slot);
-    int ret = atomic_write_to_slot(target_slot, expected, atomic_slot_val);
-    if(ret==0){
+        //Set target_slot to 0;
+        uint64_t atomic_slot_val = 0;
+        uint64_t expected = *reinterpret_cast<uint64_t*>(target_slot);
+        atomic_write_to_slot(target_slot, expected, atomic_slot_val);
         ctx.ret_val.ret_code = KV_OPS_SUCCESS;
+    }
+    else 
+    {
+        
+    }
+    
+    
+    if(ret==0){
+        
     }
     else{
         ctx.ret_val.ret_code = KV_OPS_FAIL_RETURN;
