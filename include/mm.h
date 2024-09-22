@@ -38,7 +38,7 @@ struct Chunk {
 
 struct MetaAddrInfo {
     uint8_t  meta_info_type;
-    uint64_t addr;
+    void* addr;
 };
 
 class MemoryPool {
@@ -75,11 +75,11 @@ public:
     ~MemoryPool() {
         for(int i=0;i<meta_info_.size();i++)
         {
-            free((void*)(meta_info_[i]->addr));
+            free((meta_info_[i]->addr));
         }
 
         for (MetaAddrInfo* info : meta_info_) {
-            delete info;  
+            free(info);  
         }
         meta_info_.clear();  
 

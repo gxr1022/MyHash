@@ -6,5 +6,5 @@ CXX_DEFINES = -DGFLAGS_IS_A_DLL=0
 
 CXX_INCLUDES = -I/mnt/nvme0/home/gxr/Myhash/include
 
-CXX_FLAGS = -g
+CXX_FLAGS = -O3 -DNDEBUG
 

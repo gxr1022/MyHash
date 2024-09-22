@@ -1,52 +1,59 @@
-#include <atomic>
+#include <cstdint>
 #include <iostream>
-#include <cstring>
-#include <iomanip>
+#include <cstring>  // 用于 memcpy
 
-// 假设的 Slot 结构体，8字节大小
 struct Slot {
     uint8_t fp;        // 1 byte
     uint8_t len;       // 1 byte
-    uint8_t pointer[6]; // 6 bytes (48 bits)
-}__attribute__((aligned(8)));
+    uint8_t pointer[6]; // 6 bytes
+};
 
-
-void print_slot_bytes(const Slot* slot) {
-    // 将 Slot 结构体的内容视为 uint64_t
-    uint64_t slot_value;
-    std::memcpy(&slot_value, slot, sizeof(Slot));  // 将 Slot 转为 64 位整数
-
-    // 打印 64 位整数的每个字节
-    std::cout << "Slot contents (in hex): ";
-    for (size_t i = 0; i < sizeof(slot_value); ++i) {
-        std::cout << std::hex << std::setw(2) << std::setfill('0')
-                  << static_cast<int>(reinterpret_cast<const uint8_t*>(&slot_value)[i]) << " ";
-    }
-    std::cout << std::dec << std::endl;  // 恢复到十进制输出
+// 判断当前系统的字节序（返回 true 表示小端字节序）
+bool isLittleEndian() {
+    int num = 1;
+    return *(char *)&num == 1;
 }
 
-// 原子性地将 8 字节数据写入 Slot 指向的地址
-void atomic_write_to_slot(Slot* target_slot, uint64_t new_value) {
-    // 通过 reinterpret_cast 将 Slot* 转换为 std::atomic<uint64_t>*
-    std::atomic<uint64_t>* atomic_slot = reinterpret_cast<std::atomic<uint64_t>*>(target_slot);
+// 将 Slot 转换为 int64_t
+int64_t SlotToInt64(const Slot &slot) {
+    int64_t result = 0;
 
-    // 使用 std::atomic 的 store 方法进行原子性写入
-    atomic_slot->store(new_value, std::memory_order_relaxed);
+    if (isLittleEndian()) {
+        result |= (static_cast<int64_t>(slot.fp) << 56);
+        result |= (static_cast<int64_t>(slot.len) << 48);
+        result |= (static_cast<int64_t>(slot.pointer[0]) << 40);
+        result |= (static_cast<int64_t>(slot.pointer[1]) << 32);
+        result |= (static_cast<int64_t>(slot.pointer[2]) << 24);
+        result |= (static_cast<int64_t>(slot.pointer[3]) << 16);
+        result |= (static_cast<int64_t>(slot.pointer[4]) << 8);
+        result |= static_cast<int64_t>(slot.pointer[5]);
+    } else {
+        result |= (static_cast<int64_t>(slot.pointer[5]) << 56);
+        result |= (static_cast<int64_t>(slot.pointer[4]) << 48);
+        result |= (static_cast<int64_t>(slot.pointer[3]) << 40);
+        result |= (static_cast<int64_t>(slot.pointer[2]) << 32);
+        result |= (static_cast<int64_t>(slot.pointer[1]) << 24);
+        result |= (static_cast<int64_t>(slot.pointer[0]) << 16);
+        result |= (static_cast<int64_t>(slot.len) << 8);
+        result |= static_cast<int64_t>(slot.fp);
+    }
+
+    return result;
 }
 
 int main() {
-    // 假设我们有一个 Slot 结构体，位于某个内存地址
-    Slot* slot_ptr = new Slot();  // 分配内存并初始化 Slot 结构体
-    uint64_t new_value = 0xDEADBEEFCAFEBABE;  // 要写入的8字节值
+    // 初始化 Slot 结构体
+    Slot slot = {0x7F, 0xAA, {0x01, 0x02, 0x03, 0x04, 0x05, 0x06}};
 
-    // 原子性地写入数据到 slot_ptr 指向的地址
-    atomic_write_to_slot(slot_ptr, new_value);
+    // 将 Slot 结构体转换为 int64_t
+    int64_t slot_as_int = SlotToInt64(slot);
 
-    // 打印写入结果
-    std::atomic<uint64_t>* atomic_slot = reinterpret_cast<std::atomic<uint64_t>*>(slot_ptr);
-    uint64_t result = atomic_slot->load(std::memory_order_relaxed);
-    std::cout << "Written value: 0x" << std::hex << result << std::endl;
-    print_slot_bytes(slot_ptr);
-    delete slot_ptr;  // 释放内存
+    // 将 int64_t 写回 slot 的地址
+    std::memcpy(&slot, &slot_as_int, sizeof(int64_t));
+
+    // 打印 slot.fp 和 slot.len
+    std::cout << "slot.fp: " << std::hex << static_cast<int>(slot.fp) << std::endl;
+    std::cout << "slot.len: " << std::hex << static_cast<int>(slot.len) << std::endl;
+
     return 0;
 }

@@ -14,12 +14,12 @@
 
 #include "Myhash.h"
 
-DEFINE_uint64(str_key_size, 8, "size of key (bytes)");
-DEFINE_uint64(str_value_size, 42, "size of value (bytes)");
-DEFINE_uint64(num_threads, 2, "the number of threads");
+DEFINE_uint64(str_key_size, 16, "size of key (bytes)");
+DEFINE_uint64(str_value_size, 1024, "size of value (bytes)");
+DEFINE_uint64(num_threads, 1, "the number of threads");
 DEFINE_uint64(num_of_ops, 100000, "the number of operations");
 DEFINE_uint64(time_interval, 10, "the time interval of insert operations");
-DEFINE_uint64(chunk_size, 64, "the size of chunck size");
+DEFINE_uint64(chunk_size, 4096, "the size of chunck size");
 DEFINE_uint64(num_chunks, 1000000, "the number of chunks in a memory block");
 DEFINE_string(report_prefix, "[report] ", "prefix of report data");
 
@@ -87,16 +87,20 @@ Client::~Client()
 
 }
 
-std::string Client::from_uint64_to_string(uint64_t value,uint64_t value_size)
+std::string Client::from_uint64_to_string(uint64_t value, uint64_t value_size)
 {
     std::stringstream ss;
     ss << std::setfill('0') << std::setw(value_size) << std::hex << value;
     std::string str = ss.str();
+    
     if (str.length() > value_size) {
         str = str.substr(str.length() - value_size);
     }
-    return ss.str();
+    
+    return str; 
 }
+
+
 
 void Client::load_and_run()
 {
@@ -134,15 +138,39 @@ void Client::client_ops_cnt(uint32_t ops_num) {
     void * search_addr = NULL;
     
     uint64_t rand=0;
-    std::string key;
+  
+    // std::string key;
+    //     key=from_uint64_to_string(rand,key_size_);
+    //     KVInfo *kv_info = new KVInfo();
+    //     kv_info->key_addr = &key;
+    //     kv_info->value_addr = &common_value_;
+    //     kv_info->key_len = key_size_;
+    //     kv_info->value_len = value_size_;
+    //     kv_info->ops_id = 1;
+    //     kv_info->ops_type = KV_REQ_INSERT; // just try insert now.
+
+        // myhash->kv_insert(kv_info);
+        // search_addr = myhash->kv_search(kv_info);
+        //     if (search_addr == NULL) {
+        //         num_failed ++;
+        //     }
+        //     char data[1024];
+        //     memcpy(data, search_addr, 1024);
+        //     std::cout<<std::string(data, 1024);
+
+
     for (int i = 0; i < ops_num; i ++) {
+        std::string key;
         key=from_uint64_to_string(rand,key_size_);
         KVInfo *kv_info = new KVInfo();
         kv_info->key_addr = &key;
         kv_info->key_len = key_size_;
+        kv_info->value_addr = &common_value_;
         kv_info->value_len = value_size_;
         kv_info->ops_id = i;
         kv_info->ops_type = KV_REQ_INSERT; // just try insert now.
+        myhash->kv_insert(kv_info);
+
 
         switch (kv_info->ops_type) {
         case KV_REQ_SEARCH:
@@ -150,6 +178,9 @@ void Client::client_ops_cnt(uint32_t ops_num) {
             if (search_addr == NULL) {
                 num_failed ++;
             }
+            char data[1024];
+            memcpy(data, search_addr, 1024);
+            std::cout<<std::string(data, 1024);
             break;
         case KV_REQ_INSERT:
             ret = myhash->kv_insert(kv_info);
@@ -167,6 +198,8 @@ void Client::client_ops_cnt(uint32_t ops_num) {
             myhash->kv_search(kv_info);
             break;
         }
+        delete kv_info;
+        kv_info = nullptr; 
     }
     // fiber_args->num_failed = num_failed;
     rand++;

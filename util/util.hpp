@@ -43,32 +43,44 @@ inline uint64_t HashIndexConvert40To64Bits(uint8_t * addr) {
     uint64_t ret = 0;
     return ret | ((uint64_t)addr[0] << 40) | ((uint64_t)addr[1] << 32)
         | ((uint64_t)addr[2] << 24) | ((uint64_t)addr[3] << 16) 
-        | ((uint64_t)addr[4] << 8);
+        | ((uint64_t)addr[4] << 8) | ((uint64_t)addr[5]);
 }
+
 
 inline uint64_t HashIndexConvert48To64Bits(uint8_t * addr) {
     uint64_t ret = 0;
-    return ret | ((uint64_t)addr[0] << 48) | ((uint64_t)addr[1] << 40)
-        | ((uint64_t)addr[2] << 32) | ((uint64_t)addr[3] << 24) 
-        | ((uint64_t)addr[4] << 16) | ((uint64_t)addr[5] << 8);
+    return ret | ((uint64_t)addr[0] << 40)  // addr[0] 应该放在最高位
+               | ((uint64_t)addr[1] << 32)
+               | ((uint64_t)addr[2] << 24)
+               | ((uint64_t)addr[3] << 16)
+               | ((uint64_t)addr[4] << 8)
+               | ((uint64_t)addr[5]);
 }
 
-inline void HashIndexConvert64To40Bits(uint64_t addr, uint8_t * o_addr) {
+
+inline void HashIndexConvert64To48Bits(uint64_t addr, uint8_t * o_addr) {
     o_addr[0] = (uint8_t)((addr >> 40) & 0xFF);
     o_addr[1] = (uint8_t)((addr >> 32) & 0xFF);
     o_addr[2] = (uint8_t)((addr >> 24) & 0xFF);
     o_addr[3] = (uint8_t)((addr >> 16) & 0xFF);
-    o_addr[4] = (uint8_t)((addr >> 8)  & 0xFF);
+    o_addr[4] = (uint8_t)((addr >> 8) & 0xFF);
+    o_addr[5] = (uint8_t)(addr & 0xFF);
 }
 
-inline void HashIndexConvert64To48Bits(uint64_t addr, uint8_t * o_addr) {
-    o_addr[0] = (uint8_t)((addr >> 48) & 0xFF);
-    o_addr[1] = (uint8_t)((addr >> 40) & 0xFF);
-    o_addr[2] = (uint8_t)((addr >> 32) & 0xFF);
-    o_addr[3] = (uint8_t)((addr >> 24) & 0xFF);
-    o_addr[4] = (uint8_t)((addr >> 16) & 0xFF);
-    o_addr[5] = (uint8_t)((addr >> 8)  & 0xFF);
+inline bool isLittleEndian() {
+    int num = 1;
+    return *(char *)&num == 1;
 }
+
+// inline void HashIndexConvert64To48Bits(uint64_t addr, uint8_t *o_addr) {
+//     o_addr[0] = (uint8_t)((addr >> 40) & 0xFF);
+//     o_addr[1] = (uint8_t)((addr >> 32) & 0xFF);
+//     o_addr[2] = (uint8_t)((addr >> 24) & 0xFF);
+//     o_addr[3] = (uint8_t)((addr >> 16) & 0xFF);
+//     o_addr[4] = (uint8_t)((addr >> 8)  & 0xFF);
+//     o_addr[5] = (uint8_t)(addr & 0xFF);
+// }
+
 
 
 inline uint64_t string_key_hash_computation(const void * data, uint64_t length, uint64_t seed, uint32_t align) {

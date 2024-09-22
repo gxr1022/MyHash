@@ -176,12 +176,17 @@ private:
 public:
     Myhash(){};
     Myhash(size_t chunk_size, size_t num_chunks);
-    ~Myhash(){}
+    ~Myhash(){
+
+        delete mm_;
+        free(root_);
+
+    }
 
     KVInfo   * kv_info_list_;
     KVReqCtx * kv_req_ctx_list_;
     uint32_t   num_total_operations_;
-    std::mutex subtable_entry_mutex;
+    // std::mutex subtable_entry_mutex;
 
     void init_hash_table();
     void init_root();
@@ -241,7 +246,7 @@ static inline uint64_t pack_subtable_modified_fields(uint8_t locked,uint8_t new_
     return packed;
 }
 
-uint64_t pack_header_fields(uint32_t local_depth, uint32_t prefix) {
+static inline uint64_t pack_header_fields(uint32_t local_depth, uint32_t prefix) {
     uint64_t result = 0;
     result |= static_cast<uint64_t>(local_depth);
 

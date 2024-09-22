@@ -37,7 +37,7 @@ void Myhash::init_root()
     root_->subtable_bucket_num = HASH_SUBTABLE_BUCKET_NUM;
     root_->seed = rand();
 
-    root_->kv_offset = mm_->init_KVblock_meta_info_->addr; 
+    root_->kv_offset =reinterpret_cast<uint64_t>(mm_->init_KVblock_meta_info_->addr); 
 
     return;
 }
@@ -71,6 +71,7 @@ void Myhash::init_subtable()
             // only one thread initialize it, so atomic operation doesn't need.
             root_->subtable_entry[subtable_idx].local_depth = HASH_INIT_LOCAL_DEPTH;
             root_->subtable_entry[subtable_idx].lock = 0;
+            free(subtable_info);
         }   
     }
     return;
@@ -86,6 +87,7 @@ void * Myhash::kv_search(KVInfo * kv_info)
     get_kv_addr_info(&ctx.hash_info, &ctx.tbl_addr_info); // initialize ctx.hash_info
     find_kv_in_buckets(&ctx);
     
+    // resize operation is in progress
     if(ctx.ret_val.value_addr==NULL && ((ctx.hash_info.local_depth != ctx.f_com_bucket->h.local_depth && ctx.hash_info.prefix != ctx.f_com_bucket->h.prefix) || (ctx.hash_info.local_depth != ctx.f_com_bucket[1].h.local_depth && ctx.hash_info.prefix != ctx.f_com_bucket[1].h.prefix) || (ctx.hash_info.local_depth != ctx.s_com_bucket->h.local_depth && ctx.hash_info.prefix != ctx.s_com_bucket->h.prefix) || (ctx.hash_info.local_depth != ctx.s_com_bucket[1].h.local_depth && ctx.hash_info.prefix != ctx.s_com_bucket[1].h.prefix) ))
     {
         ctx.hash_info.prefix = (ctx.hash_info.hash_value >> SUBTABLE_USED_HASH_BIT_NUM) & HASH_MASK(root_->global_depth);
@@ -94,7 +96,7 @@ void * Myhash::kv_search(KVInfo * kv_info)
         find_kv_in_buckets(&ctx);
     }
     if(ctx.ret_val.value_addr!=NULL && !VerifyChecksum(ctx.kv_info->key_addr,ctx.kv_info->key_len,ctx.ret_val.value_addr,ctx.kv_info->value_len,ctx.checksum)){
-        // maybe it doesn't found, maybe it has been released by another thread who excuted delete/update operation. Both is OK.
+        // maybe it doesn't found, maybe it has been released by another thread who excuted delete/update operation. Both are OK.
         ctx.ret_val.value_addr = NULL;
     }
     return ctx.ret_val.value_addr;
@@ -116,8 +118,8 @@ int Myhash::kv_update(KVInfo * kv_info)
     uint64_t checksum = SetChecksum(&(ctx.kv_info)->key_addr,(ctx.kv_info)->key_len,&(ctx.kv_info)->value_addr,(ctx.kv_info)->value_len);
     memcpy(KVblock_addr, &(ctx.kv_info)->key_len, 2);
     memcpy(KVblock_addr+2, &(ctx.kv_info)->value_len, 4);
-    memcpy(KVblock_addr + 6, &(ctx.kv_info)->key_addr, (ctx.kv_info)->key_len);
-    memcpy(KVblock_addr + 6 + (ctx.kv_info)->key_len, &(ctx.kv_info)->value_addr,(ctx.kv_info)->value_len);
+    memcpy(KVblock_addr + 6, (ctx.kv_info)->key_addr, (ctx.kv_info)->key_len);
+    memcpy(KVblock_addr + 6 + (ctx.kv_info)->key_len, (ctx.kv_info)->value_addr,(ctx.kv_info)->value_len);
     memcpy(KVblock_addr + 6 + (ctx.kv_info)->key_len + (ctx.kv_info)->value_len,&checksum,8);
 
     //If it needs memory barrier?
@@ -176,7 +178,7 @@ int Myhash::kv_insert(KVInfo * kv_info)
     kv_insert_read_buckets_and_write_kv(&ctx); 
 
     //Check if there are duplicate key in 4 candidate buckets.
-    check_kv_in_candidate_buckets(&ctx);
+    // check_kv_in_candidate_buckets(&ctx);
     return ctx.ret_val.ret_code;
 }
 
@@ -237,7 +239,7 @@ void Myhash::find_kv_in_buckets(KVReqCtx * ctx) {
 void Myhash::kv_insert_read_buckets_and_write_kv(KVReqCtx * ctx) {
 
     // Allocate KV block memory, sizeof(k_len+v_len)=6, sizeof(crc)=1
-    uint32_t kv_block_size = 6 + (ctx->kv_info)->key_len + (ctx->kv_info)->value_len+8;
+    uint32_t kv_block_size = 6 + (ctx->kv_info)->key_len + (ctx->kv_info)->value_len + 8;
     
     //acquire the address of KVblock and write key-value pair
     mm_->mm_alloc_subblock(kv_block_size, &ctx->mm_alloc_ctx); 
@@ -246,11 +248,11 @@ void Myhash::kv_insert_read_buckets_and_write_kv(KVReqCtx * ctx) {
         printf("Error: Failed to allocate memory for KVblock_addr\n");
         return;
     }
-    uint64_t checksum = SetChecksum(&(ctx->kv_info)->key_addr,(ctx->kv_info)->key_len,&(ctx->kv_info)->value_addr,(ctx->kv_info)->value_len);
+    uint64_t checksum = SetChecksum((ctx->kv_info)->key_addr,(ctx->kv_info)->key_len,(ctx->kv_info)->value_addr,(ctx->kv_info)->value_len);
     memcpy(KVblock_addr, &(ctx->kv_info)->key_len, sizeof(uint16_t));
     memcpy(KVblock_addr + 2, &(ctx->kv_info)->value_len, sizeof(uint32_t));
-    memcpy(KVblock_addr + 6, &(ctx->kv_info)->key_addr, (ctx->kv_info)->key_len);
-    memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len, &(ctx->kv_info)->value_addr,(ctx->kv_info)->value_len);
+    memcpy(KVblock_addr + 6, (ctx->kv_info)->key_addr, (ctx->kv_info)->key_len);
+    memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len, (ctx->kv_info)->value_addr,(ctx->kv_info)->value_len);
     memcpy(KVblock_addr + 6 + (ctx->kv_info)->key_len + (ctx->kv_info)->value_len,&checksum,8);
     
     //find an empty slot ……
@@ -472,14 +474,30 @@ int Myhash::fill_slot(uint64_t iter_kv_subblock_addr, uint8_t iter_kv_subblock_n
     uint8_t * p_48 = new uint8_t[6];
     HashIndexConvert64To48Bits(iter_kv_subblock_addr, p_48);
 
-    atomic_slot_val |= (static_cast<uint64_t>(a_kv_hash_info->fp) << 56);
-    atomic_slot_val |= (static_cast<uint64_t>(iter_kv_subblock_num) << 48);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[0]) << 40);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[1]) << 32);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[2]) << 24);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[3]) << 16);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[4]) << 8);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[5]));
+    if (isLittleEndian()) {
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[5]) << 56);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[4]) << 48);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[3]) << 40);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[2]) << 32);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[1]) << 24);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[0]) << 16);
+        atomic_slot_val |= (static_cast<uint64_t>(iter_kv_subblock_num) << 8);
+        atomic_slot_val |= (static_cast<uint64_t>(a_kv_hash_info->fp));
+    }
+    else{
+        atomic_slot_val |= (static_cast<uint64_t>(a_kv_hash_info->fp) << 56);
+        atomic_slot_val |= (static_cast<uint64_t>(iter_kv_subblock_num) << 48);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[0]) << 40);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[1]) << 32);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[2]) << 24);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[3]) << 16);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[4]) << 8);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[5]));
+    }
+    
+
+    delete[] p_48;
+
 
     //write to slot atomiclly. So don't need lock.
     int ret = atomic_write_to_slot(target_slot, 0, atomic_slot_val);
@@ -534,18 +552,32 @@ int Myhash::fill_slot(MMAllocCtx * mm_alloc_ctx, KVHashInfo * a_kv_hash_info, Sl
     // target_slot->fp = a_kv_hash_info->fp;
     // target_slot->len = mm_alloc_ctx->num_subblocks; // every subblock has 64 bytes, and kv_len represents the total length of KV block.
     // HashIndexConvert64To48Bits(mm_alloc_ctx->addr, target_slot->pointer);
-    uint64_t atomic_slot_val;
-    uint8_t * p_48 = new uint8_t(6);
+    
+    uint8_t * p_48 = new uint8_t[6];
     HashIndexConvert64To48Bits(mm_alloc_ctx->addr, p_48);
+    uint64_t atomic_slot_val=0;
 
-    atomic_slot_val |= (static_cast<uint64_t>(a_kv_hash_info->fp) << 56);
-    atomic_slot_val |= (static_cast<uint64_t>(mm_alloc_ctx->num_subblocks) << 48);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[0]) << 40);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[1]) << 32);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[2]) << 24);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[3]) << 16);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[4]) << 8);
-    atomic_slot_val |= (static_cast<uint64_t>(p_48[5]));
+    if (isLittleEndian()) {
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[5]) << 56);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[4]) << 48);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[3]) << 40);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[2]) << 32);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[1]) << 24);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[0]) << 16);
+        atomic_slot_val |= (static_cast<uint64_t>(mm_alloc_ctx->num_subblocks) << 8);
+        atomic_slot_val |= (static_cast<uint64_t>(a_kv_hash_info->fp));
+    }
+    else{
+        atomic_slot_val |= (static_cast<uint64_t>(a_kv_hash_info->fp) << 56);
+        atomic_slot_val |= (static_cast<uint64_t>(mm_alloc_ctx->num_subblocks) << 48);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[0]) << 40);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[1]) << 32);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[2]) << 24);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[3]) << 16);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[4]) << 8);
+        atomic_slot_val |= (static_cast<uint64_t>(p_48[5]));
+    }
+    delete[] p_48;
 
     //write to slot atomiclly. So don't need lock.
     int ret = atomic_write_to_slot(target_slot,0, atomic_slot_val);
@@ -739,7 +771,7 @@ uint32_t Myhash::GetFreeSlotNum(Bucket * bucket, uint32_t * free_idx) {
     uint32_t free_num = 0;
     for (int i = 0; i < HASH_ASSOC_NUM; i++) {
       // when initialize the subtable, set all bucket to 0.
-        if (bucket->slots[i].fp == 0 && bucket->slots[i].len == 0 && IsEmptyPointer(bucket->slots[i].pointer, 5)) {
+        if (bucket->slots[i].fp == 0 && bucket->slots[i].len == 0 && IsEmptyPointer(bucket->slots[i].pointer, 6)) {
             // free_idx_list[free_num] = i;
             free_num ++;
             *free_idx = i;

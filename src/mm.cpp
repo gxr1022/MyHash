@@ -19,7 +19,7 @@ void MemoryPool::initial_alloc_KVblock()
     
     MetaAddrInfo* meta_info = (MetaAddrInfo *)malloc(sizeof(MetaAddrInfo));
     meta_info->meta_info_type=TYPE_KVBLOCK;
-    meta_info->addr=reinterpret_cast<uint64_t>(KVblock_init_addr);
+    meta_info->addr=KVblock_init_addr;
     meta_info_.push_back(meta_info);
 
     init_KVblock_meta_info_ = meta_info;
@@ -110,12 +110,13 @@ void MemoryPool::mm_free_cur(const MMAllocCtx * ctx) {
 void MemoryPool::mm_alloc_subtable(MMAllocSubtableCtx *ctx, size_t alloc_len) {
     
     // acquire the address of subtable, address of different subtables are non-continuous.
-    ctx->addr =reinterpret_cast<uint64_t>(malloc(alloc_len));
+    
     
     // record the Memory block information in meta_info
     MetaAddrInfo* meta_info = (MetaAddrInfo *)malloc(sizeof(MetaAddrInfo));
+    meta_info->addr=malloc(alloc_len);
+    ctx->addr =reinterpret_cast<uint64_t>(meta_info->addr);
     meta_info->meta_info_type=TYPE_SUBTABLE;
-    meta_info->addr=ctx->addr;
     meta_info_.push_back(meta_info);
 
     return;

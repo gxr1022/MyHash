@@ -7,8 +7,8 @@ LOG_PATH=${RUN_PATH}/log/${current}
 BINARY_PATH=${RUN_PATH}/build
 
 time_interval=10
-threads=(2)
-# for ((i = 4; i <= 48; i += 4)); do
+threads=(64)
+# for ((i = 4; i <= 64; i += 4)); do
 #     threads+=($i)
 # done
 
@@ -17,7 +17,8 @@ h_name="myhash"
 kv_sizes=(
 	# "16 16"
 	# "16 64"
-	"8 42"
+	# "8 42"
+    "16 1024"
 )
 
 num_of_ops_set=(100000)
