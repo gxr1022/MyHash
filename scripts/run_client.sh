@@ -6,22 +6,30 @@ RUN_PATH="/mnt/nvme0/home/gxr/Myhash"
 LOG_PATH=${RUN_PATH}/log/${current}
 BINARY_PATH=${RUN_PATH}/build
 
-time_interval=10
-threads=(64)
+time_interval=2
+modes=(true false)
+threads=(1)
 # for ((i = 4; i <= 64; i += 4)); do
 #     threads+=($i)
 # done
 
 h_name="myhash"
 
+# kv_sizes=(
+# 	# "4 4 22"
+#     # "16 1024 2048"
+#     "16 4096 4130"
+    
+# )
+
 kv_sizes=(
-	# "16 16"
-	# "16 64"
-	# "8 42"
-    "16 1024"
+	"8 100 120"
+	# "8 1024 1050"
+	# "8 10240 10270"
+	# "8 102400 102430"
+	# "8 1048576  1048600"
 )
 
-num_of_ops_set=(100000)
 
 mkdir -p ${LOG_PATH}
 
@@ -39,27 +47,30 @@ if [[ "${PIPESTATUS[0]}" != 0  ]];then
 	exit
 fi
 
-for t in ${threads[*]};do
-    for kv_size in "${kv_sizes[@]}";do
-        kv_size_array=( ${kv_size[*]} )
-        key_size=${kv_size_array[0]}
-        value_size=${kv_size_array[1]}
-        for num_of_ops in ${num_of_ops_set[*]};do
-            
+for mode in "${modes[@]}"; do
+    for t in ${threads[*]};do
+        for kv_size in "${kv_sizes[@]}";do
+            kv_size_array=( ${kv_size[*]} )
+            key_size=${kv_size_array[0]}
+            value_size=${kv_size_array[1]}
+            chunk_size=${kv_size_array[2]}
+
             cmd="${BINARY_PATH}/${h_name} \
             --num_threads=${t} \
             --str_key_size=${key_size} \
             --str_value_size=${value_size} \
+            --chunk_size=${chunk_size}
             --time_interval=${time_interval} \
-            --num_of_ops=${num_of_ops}
+            --first_mode=${mode}
             "
-            this_log_path=${LOG_PATH}/${h_name}.${t}.thread.${key_size}.${value_size}.${num_of_ops}.ops.log
+            this_log_path=${LOG_PATH}/${h_name}.${t}.thread.${first_mode}.${key_size}.${value_size}.${time_interval}s.log
             echo ${cmd} 2>&1 |  tee ${this_log_path}
             timeout -v 3600 \
             stdbuf -o0 \
             ${cmd} 2>&1 |  tee -a ${this_log_path}
             echo log file in : ${this_log_path}
 
+            echo 3 | sudo tee /proc/sys/vm/drop_caches > /dev/null
             sleep 5
 
         done

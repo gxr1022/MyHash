@@ -19,9 +19,11 @@ DEFINE_uint64(str_value_size, 1024, "size of value (bytes)");
 DEFINE_uint64(num_threads, 1, "the number of threads");
 DEFINE_uint64(num_of_ops, 100000, "the number of operations");
 DEFINE_uint64(time_interval, 10, "the time interval of insert operations");
-DEFINE_uint64(chunk_size, 4096, "the size of chunck size");
+DEFINE_uint64(chunk_size, 2048, "the size of chunck size");
 DEFINE_uint64(num_chunks, 1000000, "the number of chunks in a memory block");
 DEFINE_string(report_prefix, "[report] ", "prefix of report data");
+DEFINE_bool(first_mode, true, "fist mode start multiply clients on the same key value server");
+
 
 class Client
 {
@@ -35,15 +37,18 @@ public:
     uint64_t time_interval_;
     size_t chunk_size_;
     size_t num_chunks_;
+    bool first_mode_;
+    std::atomic<bool> stop_flag;
 
-    std::unique_ptr<Myhash> myhash;
+    // std::unique_ptr<Myhash> myhash;
     std::string load_benchmark_prefix = "load";
 
     std::string common_value_;
 
     Client(int argc, char **argv);
     ~Client();
-    void client_ops_cnt(uint32_t ops_num);
+    void client_ops_cnt_second();
+    void client_ops_cnt_first(Myhash *myhash);
     void load_and_run();
     void standard_report(const std::string &prefix, const std::string &name, const std::string &value);
 
@@ -52,10 +57,10 @@ public:
     {
         standard_report(benchmark_prefix, name, value);
     }
-    void init_myhash(size_t chunk_size,size_t num_chunks)
-    {
-        myhash =  std::make_unique<Myhash>(chunk_size,num_chunks);
-    }
+    // void init_myhash(size_t chunk_size,size_t num_chunks)
+    // {
+    //     myhash =  std::make_unique<Myhash>(chunk_size,num_chunks);
+    // }
     void init_common_value()
     {
         for (int i = 0; i < value_size_; i++)
@@ -65,7 +70,7 @@ public:
     }
 };
 
-Client::Client(int argc, char **argv)
+Client::Client(int argc, char **argv): stop_flag(false)
 {
     google::ParseCommandLineFlags(&argc, &argv, false);
 
@@ -76,9 +81,11 @@ Client::Client(int argc, char **argv)
     this->time_interval_ = FLAGS_time_interval;
     this->chunk_size_ = FLAGS_chunk_size;
     this->num_chunks_ = FLAGS_num_chunks;
+    this->time_interval_ = FLAGS_time_interval;
+    this->first_mode_ = FLAGS_first_mode;
     
     init_common_value();
-    init_myhash(chunk_size_,num_chunks_);
+    // init_myhash(chunk_size_,num_chunks_);
 
 }
 
@@ -100,74 +107,68 @@ std::string Client::from_uint64_to_string(uint64_t value, uint64_t value_size)
     return str; 
 }
 
-
-
 void Client::load_and_run()
 {
     // Create and start client threads
     std::vector<std::thread> threads;
-    uint32_t num_of_ops_per_thread = num_of_ops_ / num_threads_;
-    for (int i = 0; i < num_threads_; i++)
+
+    if (!first_mode_)
     {
-        threads.emplace_back([this, num_of_ops_per_thread]() {
-            this->client_ops_cnt(num_of_ops_per_thread);
-        });
+        for (int i = 0; i < num_threads_; i++)
+        {
+            threads.emplace_back([this]()
+                                 { this->client_ops_cnt_second(); });
+        }
+    }
+    else{
+        auto myhash = new Myhash(chunk_size_,num_chunks_);
+        for (int i = 0; i < num_threads_; i++)
+        {
+            threads.emplace_back([this, myhash]()
+                                 { this->client_ops_cnt_first(myhash); });
+        }
     }
 
+    std::this_thread::sleep_for(std::chrono::seconds(time_interval_));
+    stop_flag.store(true);
+
+
     // Wait for all client threads to finish
-    auto start_time = std::chrono::high_resolution_clock::now();
+    // auto start_time = std::chrono::high_resolution_clock::now();
     for (auto &thread : threads)
     {
         thread.join();
     }
-    double duration_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now() - start_time).count();
-    double duration_s = duration_ns / 1000000000;
+    double duration_s = double(time_interval_);
+    double duration_ns = duration_s * 1000000000;
     double throughput = num_of_ops_ / duration_s;
     double average_latency_ns = (double)duration_ns / num_of_ops_;
 
-    // benchmark_report(load_benchmark_prefix, "overall_duration_ns", std::to_string(duration_ns));
     benchmark_report(load_benchmark_prefix, "overall_duration_s", std::to_string(duration_s));
+    benchmark_report(load_benchmark_prefix, "overall_operation_number", std::to_string(num_of_ops_));
     benchmark_report(load_benchmark_prefix, "overall_throughput", std::to_string(throughput));
-    benchmark_report(load_benchmark_prefix, "overall_average_latency_ns", std::to_string(average_latency_ns));
+
 }
 
-void Client::client_ops_cnt(uint32_t ops_num) {
+void Client::client_ops_cnt_second() {
 
     uint32_t num_failed = 0;
     int ret = 0;
     void * search_addr = NULL;
     
-    uint64_t rand=0;
-  
-    // std::string key;
-    //     key=from_uint64_to_string(rand,key_size_);
-    //     KVInfo *kv_info = new KVInfo();
-    //     kv_info->key_addr = &key;
-    //     kv_info->value_addr = &common_value_;
-    //     kv_info->key_len = key_size_;
-    //     kv_info->value_len = value_size_;
-    //     kv_info->ops_id = 1;
-    //     kv_info->ops_type = KV_REQ_INSERT; // just try insert now.
+    auto myhash =  std::make_unique<Myhash>(chunk_size_,num_chunks_);
 
-        // myhash->kv_insert(kv_info);
-        // search_addr = myhash->kv_search(kv_info);
-        //     if (search_addr == NULL) {
-        //         num_failed ++;
-        //     }
-        //     char data[1024];
-        //     memcpy(data, search_addr, 1024);
-        //     std::cout<<std::string(data, 1024);
-
-
-    for (int i = 0; i < ops_num; i ++) {
-        std::string key;
+    uint64_t rand = 0;
+    std::string key;
+    while (!stop_flag.load())
+    {
         key=from_uint64_to_string(rand,key_size_);
         KVInfo *kv_info = new KVInfo();
         kv_info->key_addr = &key;
         kv_info->key_len = key_size_;
         kv_info->value_addr = &common_value_;
         kv_info->value_len = value_size_;
-        kv_info->ops_id = i;
+        kv_info->ops_id = rand;
         kv_info->ops_type = KV_REQ_INSERT; // just try insert now.
         myhash->kv_insert(kv_info);
 
@@ -199,12 +200,70 @@ void Client::client_ops_cnt(uint32_t ops_num) {
             break;
         }
         delete kv_info;
+
         kv_info = nullptr; 
+        rand++;
     }
-    // fiber_args->num_failed = num_failed;
-    rand++;
+    num_of_ops_ += rand;
     return;
 }
+
+void Client::client_ops_cnt_first(Myhash *myhash) {
+
+    uint32_t num_failed = 0;
+    int ret = 0;
+    void * search_addr = NULL;
+    
+    uint64_t rand = 0;
+    std::string key;
+    while (!stop_flag.load())
+    {
+        key=from_uint64_to_string(rand,key_size_);
+        KVInfo *kv_info = new KVInfo();
+        kv_info->key_addr = &key;
+        kv_info->key_len = key_size_;
+        kv_info->value_addr = &common_value_;
+        kv_info->value_len = value_size_;
+        kv_info->ops_id = rand;
+        kv_info->ops_type = KV_REQ_INSERT; // just try insert now.
+        myhash->kv_insert(kv_info);
+
+
+        switch (kv_info->ops_type) {
+        case KV_REQ_SEARCH:
+            search_addr = myhash->kv_search(kv_info);
+            if (search_addr == NULL) {
+                num_failed ++;
+            }
+            char data[1024];
+            memcpy(data, search_addr, 1024);
+            std::cout<<std::string(data, 1024);
+            break;
+        case KV_REQ_INSERT:
+            ret = myhash->kv_insert(kv_info);
+            if (ret == KV_OPS_FAIL_RETURN) {
+                num_failed++;
+            }
+            break;
+        case KV_REQ_UPDATE:
+            myhash->kv_update(kv_info);
+            break;
+        case KV_REQ_DELETE:
+            myhash->kv_delete(kv_info);
+            break;
+        default:
+            myhash->kv_search(kv_info);
+            break;
+        }
+        delete kv_info;
+
+        kv_info = nullptr; 
+        rand++;
+    }
+    num_of_ops_ += rand;
+    return;
+}
+
 
 void Client::standard_report(const std::string &prefix, const std::string &name, const std::string &value)
 {
