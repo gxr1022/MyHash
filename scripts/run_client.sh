@@ -6,12 +6,12 @@ RUN_PATH="/mnt/nvme0/home/gxr/Myhash"
 LOG_PATH=${RUN_PATH}/log/${current}
 BINARY_PATH=${RUN_PATH}/build
 
-time_interval=2
+time_interval=60
 modes=(true false)
 threads=(1)
-# for ((i = 4; i <= 64; i += 4)); do
-#     threads+=($i)
-# done
+for ((i = 4; i <= 64; i += 4)); do
+    threads+=($i)
+done
 
 h_name="myhash"
 
@@ -23,11 +23,11 @@ h_name="myhash"
 # )
 
 kv_sizes=(
-	"8 100 120"
-	# "8 1024 1050"
-	# "8 10240 10270"
-	# "8 102400 102430"
-	# "8 1048576  1048600"
+	"8 100 130"
+	"8 1024 1050"
+	"8 10240 10270"
+	"8 102400 102430"
+	"8 1048576  1048600"
 )
 
 
@@ -63,7 +63,7 @@ for mode in "${modes[@]}"; do
             --time_interval=${time_interval} \
             --first_mode=${mode}
             "
-            this_log_path=${LOG_PATH}/${h_name}.${t}.thread.${first_mode}.${key_size}.${value_size}.${time_interval}s.log
+            this_log_path=${LOG_PATH}/${h_name}.${t}.thread.${mode}.${key_size}.${value_size}.${time_interval}s.log
             echo ${cmd} 2>&1 |  tee ${this_log_path}
             timeout -v 3600 \
             stdbuf -o0 \

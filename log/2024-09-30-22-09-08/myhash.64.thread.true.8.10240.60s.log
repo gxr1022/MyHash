@@ -1,0 +1,4 @@
+/mnt/nvme0/home/gxr/Myhash/build/myhash --num_threads=64 --str_key_size=8 --str_value_size=10240 --chunk_size=10270 --time_interval=60 --first_mode=true
+[report] load_overall_duration_s : 60.000000
+[report] load_overall_operation_number : 3887861
+[report] load_overall_throughput : 64797.683333

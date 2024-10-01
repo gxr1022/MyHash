@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.10)
 project(MYHASH LANGUAGES CXX)
 
 set(CMAKE_INSTALL_INCLUDEDIR "include")
+set(CMAKE_CXX_FLAGS_RELEASE "-O1 -DNDEBUG")
 
 include_directories(
     /mnt/nvme0/home/gxr/Myhash/${CMAKE_INSTALL_INCLUDEDIR}

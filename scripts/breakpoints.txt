@@ -1,12 +1,3 @@
-break Myhash.cpp:167
-break Myhash.cpp:246
-break Myhash.cpp:627
-break Myhash.cpp:473
-break Myhash.cpp:537
-break Myhash.cpp:88
-break Myhash.cpp:222
-break Myhash.cpp:684
-break Myhash.cpp:682
-break Myhash.cpp:682
-break Myhash.cpp:219
-break Myhash.cpp:552
+break Myhash.cpp:730
+break Myhash.cpp:380
+break Myhash.cpp:439

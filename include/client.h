@@ -18,7 +18,7 @@ DEFINE_uint64(str_key_size, 16, "size of key (bytes)");
 DEFINE_uint64(str_value_size, 1024, "size of value (bytes)");
 DEFINE_uint64(num_threads, 1, "the number of threads");
 DEFINE_uint64(num_of_ops, 100000, "the number of operations");
-DEFINE_uint64(time_interval, 10, "the time interval of insert operations");
+DEFINE_uint64(time_interval, 60, "the time interval of insert operations");
 DEFINE_uint64(chunk_size, 2048, "the size of chunck size");
 DEFINE_uint64(num_chunks, 1000000, "the number of chunks in a memory block");
 DEFINE_string(report_prefix, "[report] ", "prefix of report data");
@@ -75,13 +75,12 @@ Client::Client(int argc, char **argv): stop_flag(false)
     google::ParseCommandLineFlags(&argc, &argv, false);
 
     this->num_threads_ = FLAGS_num_threads;
-    this->num_of_ops_ = FLAGS_num_of_ops;
+    this->num_of_ops_ = 0;
     this->key_size_ = FLAGS_str_key_size;
     this->value_size_ = FLAGS_str_value_size;
     this->time_interval_ = FLAGS_time_interval;
     this->chunk_size_ = FLAGS_chunk_size;
     this->num_chunks_ = FLAGS_num_chunks;
-    this->time_interval_ = FLAGS_time_interval;
     this->first_mode_ = FLAGS_first_mode;
     
     init_common_value();
@@ -129,8 +128,8 @@ void Client::load_and_run()
         }
     }
 
-    std::this_thread::sleep_for(std::chrono::seconds(time_interval_));
-    stop_flag.store(true);
+    // std::this_thread::sleep_for(std::chrono::seconds(time_interval_));
+    // stop_flag.store(true);
 
 
     // Wait for all client threads to finish
@@ -216,7 +215,8 @@ void Client::client_ops_cnt_first(Myhash *myhash) {
     
     uint64_t rand = 0;
     std::string key;
-    while (!stop_flag.load())
+    // while (!stop_flag.load())
+    while (rand < 100000)
     {
         key=from_uint64_to_string(rand,key_size_);
         KVInfo *kv_info = new KVInfo();

@@ -149,13 +149,13 @@ private:
     HashRoot * root_; // get the directory address and  KV block address.
 
     void get_comb_bucket_info(KVReqCtx * ctx);
-    void get_comb_bucket_info(KVTableAddrInfo *tbl_addr_info,Bucket* f_com_bucket, Bucket* s_com_bucket );
+    void get_comb_bucket_info(KVTableAddrInfo *tbl_addr_info,Bucket*& f_com_bucket, Bucket*& s_com_bucket );
     void get_kv_addr_info(KVHashInfo * a_kv_hash_info, KVTableAddrInfo * a_kv_addr_info);
     void get_kv_hash_info( uint64_t* key_addr, uint64_t key_len, KVHashInfo * a_kv_hash_info);
     int fill_slot(MMAllocCtx * mm_alloc_ctx, KVHashInfo * a_kv_hash_info, Slot* target_slot);
     int fill_slot(uint64_t iter_kv_subblock_addr, uint8_t iter_kv_subblock_num,  KVHashInfo * a_kv_hash_info, Slot* target_slot);
     void find_empty_slot(KVReqCtx * ctx);
-    void find_empty_slot(KVTableAddrInfo *tbl_addr_info, Bucket* f_com_bucket,Bucket* s_com_bucket,int32_t &bucket_idx,int32_t &slot_idx);
+    void find_empty_slot(KVTableAddrInfo *tbl_addr_info, Bucket*& f_com_bucket,Bucket*& s_com_bucket,int32_t &bucket_idx,int32_t &slot_idx);
     void find_kv_in_buckets(KVReqCtx * ctx);
     void check_kv_in_candidate_buckets(KVReqCtx * ctx);
     int find_slot_in_buckets(KVReqCtx * ctx, Slot* target_slot);

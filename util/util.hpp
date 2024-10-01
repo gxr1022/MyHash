@@ -188,8 +188,8 @@ inline uint64_t SubtableSecondIndex(uint64_t hash_value, uint64_t f_index, uint6
     return (uint64_t)(((uint64_t)(f_index) ^ hash_of_tag) % (capacity / 2) + capacity / 2);
 }
 
-inline bool IsEmptyPointer(uint8_t * pointer, uint32_t num) {
-    for (int i = 0; i < num; i ++) {
+inline bool IsEmptyPointer(const uint8_t pointer[6]) {
+    for (int i = 0; i < 6; ++i) {
         if (pointer[i] != 0) {
             return false;
         }

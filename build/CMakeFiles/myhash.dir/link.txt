@@ -1,1 +1,1 @@
-/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/myhash.dir/src/client.cpp.o CMakeFiles/myhash.dir/src/mm.cpp.o CMakeFiles/myhash.dir/src/Myhash.cpp.o -o myhash  -Wl,-rpath,/usr/local/lib /usr/local/lib/libgflags.so.2.2.2 
+/usr/bin/c++ -g CMakeFiles/myhash.dir/src/client.cpp.o CMakeFiles/myhash.dir/src/mm.cpp.o CMakeFiles/myhash.dir/src/Myhash.cpp.o -o myhash  -Wl,-rpath,/usr/local/lib /usr/local/lib/libgflags.so.2.2.2 

@@ -1,0 +1,2 @@
+/mnt/nvme0/home/gxr/Myhash/build/myhash --num_threads=56 --str_key_size=8 --str_value_size=10240 --chunk_size=10270 --time_interval=60 --first_mode=true
+timeout: the monitored command dumped core

@@ -26,7 +26,7 @@ void Myhash::init_root()
         // to do
         return;
     }
-    root_->global_depth = HASH_GLOBAL_DEPTH;
+    root_->global_depth = HASH_INIT_LOCAL_DEPTH;
     root_->max_global_depth = HASH_MAX_GLOBAL_DEPTH;
     root_->init_local_depth = HASH_INIT_LOCAL_DEPTH;
 
@@ -71,7 +71,7 @@ void Myhash::init_subtable()
             // only one thread initialize it, so atomic operation doesn't need.
             root_->subtable_entry[subtable_idx].local_depth = HASH_INIT_LOCAL_DEPTH;
             root_->subtable_entry[subtable_idx].lock = 0;
-            free(subtable_info);
+            // free(subtable_info);
         }   
     }
     return;
@@ -262,7 +262,7 @@ void Myhash::kv_insert_read_buckets_and_write_kv(KVReqCtx * ctx) {
         // I think we need to resize hash table. Because all candidate buckets are filled. Or when pass the load factor?
         // ……
         // trigger resize operation
-
+        // kv_resize(ctx->hash_info.prefix,ctx->hash_info.local_depth);
         return;
     }
     // Determine the target slot and fill it.
@@ -295,59 +295,95 @@ void Myhash::kv_resize(uint64_t cur_prefix, uint8_t cur_local_depth){
     uint8_t p[6];
     uint64_t expected_new,atomic_subtable_val_new, expected_cur, atomic_subtable_val_cur;
     Subtable *target_subtable;
-    new_prefix = cur_prefix | (1 << cur_local_depth);
+    uint64_t cur_subtable_addr = HashIndexConvert48To64Bits(root_->subtable_entry[cur_prefix].pointer);
+    uint64_t new_subtable_addr;
+    uint64_t expected_header, atomic_header_val;
     new_local_depth = cur_local_depth + 1;
-    
+
     // 1.atomiclly modify and lock current subtable entry.
     target_subtable = &root_->subtable_entry[cur_prefix];
     expected_cur = pack_subtable(root_->subtable_entry[cur_prefix]);
     atomic_subtable_val_cur = pack_subtable_modified_fields(1,new_local_depth,root_->subtable_entry[cur_prefix].pointer);    
     atomic_write_to_subtable(target_subtable, expected_cur, atomic_subtable_val_cur);
+   
+    if(target_subtable->local_depth == root_ -> global_depth)
+    {
+        new_prefix = cur_prefix | (1 << cur_local_depth);
+        
+        // 2.increse the global_depth by 1
+        root_ -> global_depth.fetch_add(1, std::memory_order_relaxed);
+        
+        // 3.update subtable entries to new directory
+        int new_directory_size = 1 << root_ -> global_depth;
+        assert(new_directory_size > HASH_MAX_SUBTABLE_NUM);
+        uint64_t expected_header, atomic_header_val;
+        for (int i = 0; i < (new_directory_size / 2); ++i) {
+            int new_id = i + new_directory_size / 2 ;
+            //allocate new subtable for resize.
+            if(new_id == new_prefix && root_ -> subtable_entry[new_id].lock == 0) // no other thread is holding it
+            {
+                // allocate new subtable
+                MMAllocSubtableCtx *subtable_info = (MMAllocSubtableCtx *)malloc(sizeof(MMAllocSubtableCtx));
+                subtable_info->subtable_idx = new_prefix;
+                mm_->mm_alloc_subtable(subtable_info,SUBTABLE_LEN);
+                // initialize buckets for subtable
+                for (int j = 0; j < HASH_ADDRESSABLE_BUCKET_NUM; j ++) {
+                    Bucket * bucket = (Bucket *)subtable_info->addr + j;
+                    
+                    // atomically update new subtable
+                    atomic_header_val = pack_header_fields(new_local_depth,new_prefix);
+                    atomic_write_to_bucket_header(&bucket->h,atomic_header_val);
+                    memset(bucket->slots, 0, HASH_ASSOC_NUM*sizeof(Slot));
 
-    // 2.increse the global_depth by 1
-    // global_depth += 1;
-    root_ -> global_depth.fetch_add(1, std::memory_order_relaxed);
-    
-    // 3.update subtable entries to new directory
-    int new_directory_size = 1 << root_ -> global_depth;
-    uint64_t expected_header, atomic_header_val;
-    for (int i = 0; i < (new_directory_size / 2); ++i) {
-        int new_id = i + new_directory_size / 2 ;
-        //allocate new subtable for resize.
-        if(new_id == new_prefix && root_ -> subtable_entry[new_id].lock == 0) // no other thread is holding it
-        {
-            // allocate new subtable
-            MMAllocSubtableCtx *subtable_info = (MMAllocSubtableCtx *)malloc(sizeof(MMAllocSubtableCtx));
-            subtable_info->subtable_idx = new_prefix;
-            mm_->mm_alloc_subtable(subtable_info,SUBTABLE_LEN);
-            // initialize buckets for subtable
-            for (int j = 0; j < HASH_ADDRESSABLE_BUCKET_NUM; j ++) {
-                Bucket * bucket = (Bucket *)subtable_info->addr + j;
-                
-                // atomically update new subtable
-                atomic_header_val = pack_header_fields(new_local_depth,new_prefix);
-                atomic_write_to_bucket_header(&bucket->h,atomic_header_val);
-                memset(bucket->slots, 0, 7*sizeof(Slot));
+                }
+                HashIndexConvert64To48Bits(subtable_info->addr, p);
+                atomic_subtable_val_new = pack_subtable_modified_fields(1,new_local_depth,p);
 
             }
-            HashIndexConvert64To48Bits(subtable_info->addr, p);
-            atomic_subtable_val_new = pack_subtable_modified_fields(1,new_local_depth,p);
+            else
+            {
+                // set subtable entry to 0. it's wrong
+                atomic_subtable_val_new = pack_subtable_modified_fields(0,cur_local_depth,root_->subtable_entry[i].pointer);
+            }  
+            // atomically lock new subtable entry and update the local_depth and pointer of new subtable.
+            expected_new = pack_subtable(root_->subtable_entry[new_id]); 
+            target_subtable = &root_->subtable_entry[new_id];
+            atomic_write_to_subtable(target_subtable, expected_new, atomic_subtable_val_new);
+                    
         }
-        else
-        {
-            atomic_subtable_val_new = pack_subtable_modified_fields(0,cur_local_depth,root_->subtable_entry[i].pointer);
-        }  
-        // atomically lock new subtable entry and update the local_depth and pointer of new subtable.
-        expected_new = pack_subtable(root_->subtable_entry[new_id]); 
-        target_subtable = &root_->subtable_entry[new_prefix];
-        atomic_write_to_subtable(target_subtable, expected_new, atomic_subtable_val_new);          
+        new_subtable_addr = HashIndexConvert48To64Bits(root_->subtable_entry[new_prefix].pointer);
+
+    }
+    else{
+
+        new_prefix = cur_prefix;
+
+        // allocate new subtable
+        MMAllocSubtableCtx *subtable_info = (MMAllocSubtableCtx *)malloc(sizeof(MMAllocSubtableCtx));
+        subtable_info->subtable_idx = cur_prefix;
+        mm_->mm_alloc_subtable(subtable_info,SUBTABLE_LEN);
+                // initialize buckets for subtable
+        for (int j = 0; j < HASH_ADDRESSABLE_BUCKET_NUM; j ++) {
+            Bucket * bucket = (Bucket *)subtable_info->addr + j;
+                    
+            // atomically update new subtable
+            atomic_header_val = pack_header_fields(new_local_depth,cur_prefix);
+            atomic_write_to_bucket_header(&bucket->h,atomic_header_val);
+            memset(bucket->slots, 0, HASH_ASSOC_NUM*sizeof(Slot));
+
+        }
+        HashIndexConvert64To48Bits(subtable_info->addr, p);
+        atomic_subtable_val_new = pack_subtable_modified_fields(1,new_local_depth,p);
+
+        expected_new = pack_subtable(root_->subtable_entry[cur_prefix]); 
+        target_subtable = &root_->subtable_entry[cur_prefix];
+        atomic_write_to_subtable(target_subtable, expected_new, atomic_subtable_val_new);
+
+        new_subtable_addr = subtable_info->addr;
     }
 
-    // 5.modify buckets for new subtable
-    // (1) get the init address of new_subtable
-    uint64_t cur_subtable_addr = HashIndexConvert48To64Bits(root_->subtable_entry[cur_prefix].pointer);
-    uint64_t new_subtable_addr = HashIndexConvert48To64Bits(root_->subtable_entry[new_prefix].pointer);
 
+    // 5.modify buckets for new subtable
     // (2) iterate current subtable, recalculate the hash value of each key. 
     uint64_t iter_kv_subblock_addr,iter_key_addr,iter_key_len;
     uint8_t iter_num_of_subblocks;
@@ -362,6 +398,8 @@ void Myhash::kv_resize(uint64_t cur_prefix, uint8_t cur_local_depth){
         for (int j = 0; j < HASH_ASSOC_NUM; j ++)
         { 
             Slot* target_slot = &bucket_in_cur_subtbl->slots[j];
+            if (IsEmptyPointer(target_slot -> pointer))
+                continue;
             iter_kv_subblock_addr = HashIndexConvert48To64Bits(target_slot -> pointer);
             iter_num_of_subblocks = target_slot -> len;
 
@@ -408,8 +446,11 @@ void Myhash::kv_resize(uint64_t cur_prefix, uint8_t cur_local_depth){
 void Myhash::kv_resize_update_slot(uint64_t iter_kv_subblock_addr, uint8_t iter_kv_subblock_num, KVHashInfo *kv_hash_info, KVTableAddrInfo *tbl_addr_info ) {
 
     Bucket* f_com_bucket, * s_com_bucket, *new_bucket;
-    int32_t bucket_idx, slot_idx;
+    int32_t bucket_idx =0, slot_idx =0;
 
+    f_com_bucket = new Bucket();
+    s_com_bucket = new Bucket();
+    new_bucket = new Bucket();
     //find an empty slot ……
     find_empty_slot(tbl_addr_info, f_com_bucket, s_com_bucket, bucket_idx, slot_idx);
     
@@ -431,7 +472,7 @@ void Myhash::kv_resize_update_slot(uint64_t iter_kv_subblock_addr, uint8_t iter_
     return;
 }
 
-void Myhash::find_empty_slot(KVTableAddrInfo *tbl_addr_info, Bucket* f_com_bucket,Bucket* s_com_bucket,int32_t &bucket_idx,int32_t &slot_idx) 
+void Myhash::find_empty_slot(KVTableAddrInfo *tbl_addr_info, Bucket*& f_com_bucket,Bucket*& s_com_bucket,int32_t &bucket_idx,int32_t &slot_idx) 
 {
 
     get_comb_bucket_info(tbl_addr_info,f_com_bucket, s_com_bucket);
@@ -723,8 +764,12 @@ void Myhash::get_comb_bucket_info(KVReqCtx * ctx) {
 
 }
 
-void Myhash::get_comb_bucket_info(KVTableAddrInfo *tbl_addr_info,Bucket* f_com_bucket, Bucket* s_com_bucket ) {
+void Myhash::get_comb_bucket_info(KVTableAddrInfo *tbl_addr_info,Bucket*& f_com_bucket, Bucket*& s_com_bucket ) {
     //Initialize the first combination buckets and the second combination buckets, ensure that the firt bucket has lower address than the second one.
+    // if (tbl_addr_info->f_bucket_addr == nullptr || tbl_addr_info->s_bucket_addr == nullptr) {
+    //     // Handle the error, maybe allocate memory or log an error
+    //     return;
+    // }
     if(tbl_addr_info->f_bucket_addr > tbl_addr_info->s_bucket_addr)
     {
         f_com_bucket = reinterpret_cast<Bucket*>(tbl_addr_info -> s_bucket_addr);
@@ -771,7 +816,9 @@ uint32_t Myhash::GetFreeSlotNum(Bucket * bucket, uint32_t * free_idx) {
     uint32_t free_num = 0;
     for (int i = 0; i < HASH_ASSOC_NUM; i++) {
       // when initialize the subtable, set all bucket to 0.
-        if (bucket->slots[i].fp == 0 && bucket->slots[i].len == 0 && IsEmptyPointer(bucket->slots[i].pointer, 6)) {
+        if(bucket->slots[i].pointer == nullptr )
+            return free_num;
+        if (bucket->slots[i].fp == 0 && bucket->slots[i].len == 0) {
             // free_idx_list[free_num] = i;
             free_num ++;
             *free_idx = i;
